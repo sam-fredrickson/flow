@@ -1,0 +1,68 @@
+name: PR Verification
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+  push:
+    branches-ignore:
+      - main
+      - master
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.24', '1.25']
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out -coverpkg=. ./...
+
+      - name: Check coverage threshold
+        run: |
+          coverage=$(go tool cover -func=coverage.out | grep total | awk '{print int($3)}')
+          echo "Total coverage: ${coverage}%"
+          if [ "$coverage" -lt 90 ]; then
+            echo "ERROR: Coverage ${coverage}% is below threshold of 90%"
+            exit 1
+          fi
+
+  benchmark:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+
+      - name: Run benchmarks
+        run: go test -bench=. -benchmem ./bench/...
