@@ -209,6 +209,64 @@ func TestWith(t *testing.T) {
 	}
 }
 
+func TestValue(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name            string
+		step            Step[*CountingFlow]
+		expectedCounter int64
+		validator       func(error) error
+	}{
+		{
+			name: "Success",
+			step: With(
+				Value[*CountingFlow](int64(42)),
+				func(_ context.Context, c *CountingFlow, n int64) error {
+					c.Counter = n
+					return nil
+				},
+			),
+			expectedCounter: 42,
+			validator:       isNil,
+		},
+		{
+			name: "SuccessWithSlice",
+			step: With(
+				Value[*CountingFlow]([]int64{1, 2, 3, 4, 5}),
+				func(_ context.Context, c *CountingFlow, items []int64) error {
+					var sum int64
+					for _, item := range items {
+						sum += item
+					}
+					c.Counter = sum
+					return nil
+				},
+			),
+			expectedCounter: 15, // 1+2+3+4+5
+			validator:       isNil,
+		},
+		{
+			name: "ConsumeError",
+			step: With(
+				Value[*CountingFlow](int64(99)),
+				func(_ context.Context, c *CountingFlow, n int64) error {
+					c.Counter = n
+					return error2
+				},
+			),
+			expectedCounter: 99,
+			validator:       matches(error2),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			runStepTest(t, tc.step, tc.expectedCounter, tc.validator)
+		})
+	}
+}
+
 func TestSpawn(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {

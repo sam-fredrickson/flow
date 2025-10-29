@@ -100,6 +100,32 @@ func With[T, U any](
 	}
 }
 
+// Value lifts a constant value into an [Extract].
+//
+// This creates an Extract that ignores state and context, always returning
+// the given value. It's the monadic return/pure operation for Extract,
+// useful for closing over values in compositions.
+//
+// Example:
+//
+//	// Close over a slice in ForEach
+//	flow.ForEach(
+//	    flow.Value[*State](items),
+//	    ProcessItem,
+//	)
+//
+//	// Use in Pipeline
+//	flow.Pipeline(
+//	    flow.Value[*State](config),
+//	    ValidateConfig,
+//	    SaveConfig,
+//	)
+func Value[T, U any](u U) Extract[T, U] {
+	return func(_ context.Context, _ T) (U, error) {
+		return u, nil
+	}
+}
+
 // From composes an [Extract] and a [Transform] to produce a new [Extract].
 //
 // This combines the "read side" of a data pipeline: extracting a value from
