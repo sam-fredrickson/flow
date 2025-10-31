@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-func TestStepNames(t *testing.T) {
+func TestNames(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
 		name     string
@@ -23,7 +23,7 @@ func TestStepNames(t *testing.T) {
 		{
 			name: "NoNames",
 			step: func(ctx context.Context, c *CountingFlow) error {
-				names := StepNames(ctx)
+				names := Names(ctx)
 				if names != nil {
 					t.Errorf("expected nil, got %v", names)
 				}
@@ -34,7 +34,7 @@ func TestStepNames(t *testing.T) {
 		{
 			name: "SingleName",
 			step: Named("outer", func(ctx context.Context, c *CountingFlow) error {
-				names := StepNames(ctx)
+				names := Names(ctx)
 				if len(names) != 1 || names[0] != "outer" {
 					t.Errorf("expected [outer], got %v", names)
 				}
@@ -45,7 +45,7 @@ func TestStepNames(t *testing.T) {
 		{
 			name: "NestedNames",
 			step: Named("outer", Named("middle", Named("inner", func(ctx context.Context, c *CountingFlow) error {
-				names := StepNames(ctx)
+				names := Names(ctx)
 				if len(names) != 3 || names[0] != "outer" || names[1] != "middle" || names[2] != "inner" {
 					t.Errorf("expected [outer middle inner], got %v", names)
 				}
@@ -56,11 +56,11 @@ func TestStepNames(t *testing.T) {
 		{
 			name: "NamesAreImmutable",
 			step: Named("outer", func(ctx context.Context, c *CountingFlow) error {
-				names1 := StepNames(ctx)
+				names1 := Names(ctx)
 				names1[0] = "modified"
-				names2 := StepNames(ctx)
+				names2 := Names(ctx)
 				if names2[0] != "outer" {
-					t.Errorf("expected [outer], got %v - StepNames should return a copy", names2)
+					t.Errorf("expected [outer], got %v - Names should return a copy", names2)
 				}
 				return nil
 			}),

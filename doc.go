@@ -115,6 +115,53 @@
 //	    useReadReplica, // Fallback if primary fails
 //	)
 //
+// # Debugging with Traces
+//
+// Flow provides opt-in execution tracing to help debug workflows, understand
+// performance bottlenecks, and visualize execution paths. [Traced] wraps a
+// workflow and records timing and errors for all [Named] steps:
+//
+//	type Config struct{ DBPath string }
+//
+//	workflow := flow.Do(
+//	    flow.Named("validate", ValidateConfig),
+//	    flow.Named("connect", ConnectDB),
+//	    flow.Named("migrate", RunMigrations),
+//	)
+//
+//	// Trace the workflow and output results
+//	err := flow.Spawn(
+//	    flow.Traced(workflow),
+//	    flow.WriteTextTo(os.Stderr),
+//	)(ctx, cfg)
+//
+// This produces output like:
+//
+//	validate (45ms)
+//	connect (120ms)
+//	migrate (2.3s)
+//
+// Traces can be filtered to focus on specific issues:
+//
+//	trace, err := flow.Traced(workflow)(ctx, cfg)
+//	slowSteps := trace.Filter(flow.MinDuration(time.Second))
+//	slowSteps.WriteText(os.Stderr)
+//
+// Tracing supports JSON output for integration with analysis tools:
+//
+//	trace.WriteTo(os.Stdout) // JSON format
+//
+// All tracing is opt-in and has minimal overhead when not used. Only [Named]
+// steps are traced—unnamed steps are ignored. See [Traced], [Named], and
+// the examples/tracing/ directory for more details.
+//
+// # Naming Best Practices
+//
+// Use [Named] or [AutoNamed] liberally throughout your workflow hierarchy.
+// Step names optimize how the library manages context values internally. Workflows
+// that use [WithLogging], [WithSlogging], or [Traced] without corresponding [Named]
+// steps may incur additional context lookup cost.
+//
 // # Configuration-Driven Workflows
 //
 // Flow excels at configuration-driven orchestration where different components

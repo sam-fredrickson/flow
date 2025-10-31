@@ -17,10 +17,25 @@ During the **v0.x series**, breaking API changes may occur between minor version
 ## [Unreleased]
 
 ### Added
-- (None yet - features will be added in future releases)
+
+#### Execution Tracing
+- `Traced()` function to wrap workflows and record execution events
+- `Trace` result type containing events, timing, and error information
+- `TraceEvent` type capturing step names, execution time, and errors
+- `WithStreamTo()` option for real-time event streaming as JSON Lines
+- Output methods: `WriteTo()` (JSON), `WriteText()` (tree view), `WriteFlatText()` (flat list)
+- Step constructors for composability: `WriteJSONTo()`, `WriteTextTo()`, `WriteFlatTextTo()`
+- `Filter()` method for querying traces with multiple filter types
+- `FindEvent()` method for locating specific events
+- 10+ filter functions: `MinDuration()`, `MaxDuration()`, `HasError()`, `NoError()`, `NameMatches()`, `NamePrefix()`, `PathMatches()`, `HasPathPrefix()`, `DepthEquals()`, `DepthAtMost()`, `TimeRange()`, `ErrorMatches()`
+- `NamedError` type for error wrapping with step context
+- Thread-safe concurrent tracing in parallel workflows
+- Context accessor `Names()` for retrieving hierarchical step names
 
 ### Changed
-- (None yet)
+- **BREAKING**: `StepNames()` renamed to `Names()` for consistency with naming decorator patterns
+- `Named`, `NamedExtract`, `NamedTransform`, `NamedConsume`, and `AutoNamed*` variants now maintain names in unified context structure
+- Unified `flowCtx` architecture consolidating trace, names, and loggers into single efficient context value
 
 ### Deprecated
 - (None yet)

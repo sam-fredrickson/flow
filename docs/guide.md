@@ -790,13 +790,13 @@ step := flow.WithSlogger(myLogger,
 
 #### Custom Logging
 
-For custom logging formats, use `StepNames()` to retrieve the name stack and `Logger()`/`Slogger()` to access the configured logger:
+For custom logging formats, use `Names()` to retrieve the name stack and `Logger()`/`Slogger()` to access the configured logger:
 
 ```go
 func CustomLogging[T any](step flow.Step[T]) flow.Step[T] {
     return func(ctx context.Context, t T) error {
         logger := flow.Logger(ctx)
-        names := flow.StepNames(ctx)
+        names := flow.Names(ctx)
         fullName := strings.Join(names, ".")
 
         logger.Printf(">>> Starting: %s\n", fullName)
@@ -850,6 +850,141 @@ func SomeStep() flow.Step[*Thing] {
     ))
 }
 ```
+
+#### Tracing Workflow Execution
+
+For deeper debugging and performance analysis, use `Traced` to record execution events for all `Named` steps:
+
+```go
+workflow := flow.Do(
+    flow.Named("validate", ValidateConfig()),
+    flow.Named("connect", ConnectDB()),
+    flow.Named("migrate", RunMigrations()),
+)
+
+// Trace the workflow and write to stdout
+err := flow.Spawn(
+    flow.Traced(workflow),
+    flow.WriteTextTo(os.Stdout),
+)(ctx, state)
+```
+
+Example output:
+```
+validate (45ms)
+connect (120ms)
+migrate (2.3s)
+  create-tables (1.8s)
+  create-indexes (500ms)
+```
+
+**Filtering and Analysis:**
+
+Traces can be filtered to focus on specific events:
+
+```go
+_, trace, _ := flow.Traced(workflow)(ctx, state)
+
+// Find slow steps
+slowSteps := trace.Filter(flow.MinDuration(time.Second))
+
+// Find errors
+errors := trace.Filter(flow.HasError())
+
+// Combine filters
+criticalIssues := trace.Filter(
+    flow.MinDuration(500 * time.Millisecond),
+    flow.HasError(),
+)
+
+// Output results
+slowSteps.WriteText(os.Stderr)
+```
+
+**Available Filters:**
+- `MinDuration(d)`, `MaxDuration(d)` - Filter by duration
+- `HasError()`, `NoError()` - Filter by error status
+- `NameMatches(pattern)` - Match step names with glob patterns
+- `PathMatches(pattern)` - Match full dotted paths
+- `DepthEquals(n)`, `DepthAtMost(n)` - Filter by nesting depth
+- `TimeRange(start, end)` - Filter by start time window
+- `ErrorMatches(pattern)` - Match error messages
+
+**Streaming Traces:**
+
+For real-time monitoring or to preserve traces if the process crashes, stream events to a file as they complete:
+
+```go
+f, _ := os.Create("trace.jsonl")
+defer f.Close()
+
+trace, err := flow.Traced(workflow, flow.WithStreamTo(f))(ctx, state)
+
+// Events are written to file as JSON Lines during execution
+// Trace is still available in memory for post-execution analysis
+slowSteps := trace.Filter(flow.MinDuration(time.Second))
+```
+
+This writes events as [JSON Lines](https://jsonlines.org/) format (one JSON object per line), which can be processed with tools like `jq`:
+
+```bash
+# Find slow steps
+cat trace.jsonl | jq 'select(.duration > 1000000000)'
+
+# Count errors
+cat trace.jsonl | jq 'select(.error != null)' | wc -l
+```
+
+**Parallel Workflows:**
+
+For parallel workflows where tree indentation may be misleading, use `WriteFlatText`:
+
+```go
+// Flat chronological output
+trace.WriteFlatText(os.Stdout)
+
+// Or sort events by start time for precise chronological order
+events := trace.Events
+sort.Slice(events, func(i, j int) bool {
+    return events[i].Start.Before(events[j].Start)
+})
+```
+
+**Testing with Traces:**
+
+Tracing is useful in tests for asserting timing constraints and execution paths:
+
+```go
+func TestWorkflowPerformance(t *testing.T) {
+    _, trace, err := flow.Traced(myWorkflow)(ctx, state)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    // Assert no step took longer than 100ms
+    slow := trace.Filter(flow.MinDuration(100 * time.Millisecond))
+    if len(slow.Events) > 0 {
+        t.Errorf("steps exceeded timeout:\n")
+        slow.WriteText(os.Stderr)
+    }
+
+    // Assert specific steps executed
+    migrations := trace.Filter(flow.NameMatches("migrate*"))
+    if len(migrations.Events) == 0 {
+        t.Error("no migration steps executed")
+    }
+}
+```
+
+**Performance Considerations:**
+
+- Tracing is opt-in with minimal overhead when not used
+- When enabled, tracing adds ~2-3x overhead
+- Streaming adds ~3.4x additional overhead on top of tracing
+- Combined overhead (~7-10x) becomes negligible in IO-bound workflows where network/disk delays dominate
+- All `Named`, `NamedExtract`, `NamedTransform`, `NamedConsume`, and `AutoNamed` variants automatically record events when a trace is present
+- For production use, trace only critical workflow sections or enable only when debugging
+- See `examples/tracing/` for complete examples
 
 ### Mega-Wrappers: Factoring Out Common Patterns
 

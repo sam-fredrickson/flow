@@ -10,8 +10,6 @@ import (
 	"time"
 )
 
-type loggerKey struct{}
-
 // Logger returns the [log.Logger] from the context, or [log.Default] if none is set.
 //
 // This is useful for custom logging decorators that need to access the configured logger.
@@ -21,18 +19,18 @@ type loggerKey struct{}
 //	func CustomLogging[T any](step flow.Step[T]) flow.Step[T] {
 //	    return func(ctx context.Context, t T) error {
 //	        logger := flow.Logger(ctx)
-//	        names := flow.StepNames(ctx)
+//	        names := flow.Names(ctx)
 //	        // Custom logging logic here
 //	        logger.Printf("Custom: %v\n", names)
 //	        return step(ctx, t)
 //	    }
 //	}
 func Logger(ctx context.Context) *log.Logger {
-	logger, ok := ctx.Value(loggerKey{}).(*log.Logger)
+	f, ok := ctx.Value(flowCtxKey{}).(*flowCtx)
 	if !ok {
 		return log.Default()
 	}
-	return logger
+	return f.logger
 }
 
 // WithLogger configures a [Step] to use a specific [log.Logger] for logging.
@@ -41,7 +39,12 @@ func Logger(ctx context.Context) *log.Logger {
 // is configured, [WithLogging] will use [log.Default].
 //
 // This is typically applied once at the root of a workflow to configure logging
-// for all nested steps.
+// for all nested steps. For optimal performance, use [Named] or [AutoNamed]
+// liberally throughout your workflow—the flow library consolidates all context
+// state into a single lookup via flowCtx, but this optimization only provides
+// constant-time access when step names are present in the context chain.
+// Using [WithLogger] without corresponding [Named] steps may incur linear
+// context chain traversal cost.
 //
 // Example:
 //
@@ -51,8 +54,10 @@ func Logger(ctx context.Context) *log.Logger {
 //	        WithLogging(processStep)))
 func WithLogger[T any](logger *log.Logger, step Step[T]) Step[T] {
 	return func(ctx context.Context, t T) error {
-		ctx = context.WithValue(ctx, loggerKey{}, logger)
-		return step(ctx, t)
+		f, _ := ctx.Value(flowCtxKey{}).(*flowCtx)
+		f2 := newFlowCtx(ctx, f)
+		f2.logger = logger
+		return step(f2, t)
 	}
 }
 
@@ -84,11 +89,11 @@ func WithLogger[T any](logger *log.Logger, step Step[T]) Step[T] {
 //	[process.parse] finished step (took 5ms)
 //	[process] finished step (took 10ms)
 //
-// For custom logging formats, use [StepNames] to retrieve the name stack
+// For custom logging formats, use [Names] to retrieve the name stack
 // and implement your own logging decorator.
 func WithLogging[T any](step Step[T]) Step[T] {
 	return func(ctx context.Context, t T) error {
-		names := StepNames(ctx)
+		names := Names(ctx)
 		var fullName string
 		if len(names) == 0 {
 			fullName = "<unknown>"
@@ -107,8 +112,6 @@ func WithLogging[T any](step Step[T]) Step[T] {
 	}
 }
 
-type sloggerKey struct{}
-
 // Slogger returns the [slog.Logger] from the context, or [slog.Default] if none is set.
 //
 // This is useful for custom logging decorators that need to access the configured
@@ -119,18 +122,18 @@ type sloggerKey struct{}
 //	func CustomSlogging[T any](step flow.Step[T]) flow.Step[T] {
 //	    return func(ctx context.Context, t T) error {
 //	        logger := flow.Slogger(ctx)
-//	        names := flow.StepNames(ctx)
+//	        names := flow.Names(ctx)
 //	        // Custom logging logic here
 //	        logger.Info("custom step", "names", names)
 //	        return step(ctx, t)
 //	    }
 //	}
 func Slogger(ctx context.Context) *slog.Logger {
-	logger, ok := ctx.Value(sloggerKey{}).(*slog.Logger)
+	f, ok := ctx.Value(flowCtxKey{}).(*flowCtx)
 	if !ok {
 		return slog.Default()
 	}
-	return logger
+	return f.slogger
 }
 
 // WithSlogger configures a [Step] to use a specific [slog.Logger] for structured logging.
@@ -139,7 +142,12 @@ func Slogger(ctx context.Context) *slog.Logger {
 // is configured, [WithSlogging] will use [slog.Default].
 //
 // This is typically applied once at the root of a workflow to configure logging
-// for all nested steps.
+// for all nested steps. For optimal performance, use [Named] or [AutoNamed]
+// liberally throughout your workflow—the flow library consolidates all context
+// state into a single lookup via flowCtx, but this optimization only provides
+// constant-time access when step names are present in the context chain.
+// Using [WithSlogger] without corresponding [Named] steps may incur linear
+// context chain traversal cost.
 //
 // Example:
 //
@@ -149,8 +157,10 @@ func Slogger(ctx context.Context) *slog.Logger {
 //	        WithSlogging(slog.LevelInfo, processStep)))
 func WithSlogger[T any](logger *slog.Logger, step Step[T]) Step[T] {
 	return func(ctx context.Context, t T) error {
-		ctx = context.WithValue(ctx, sloggerKey{}, logger)
-		return step(ctx, t)
+		f, _ := ctx.Value(flowCtxKey{}).(*flowCtx)
+		f2 := newFlowCtx(ctx, f)
+		f2.slogger = logger
+		return step(f2, t)
 	}
 }
 
@@ -179,11 +189,11 @@ func WithSlogger[T any](logger *slog.Logger, step Step[T]) Step[T] {
 //	{"level":"debug","msg":"finished step","name":"process.parse","duration_ms":5}
 //	{"level":"info","msg":"finished step","name":"process","duration_ms":10}
 //
-// For custom logging formats, use [StepNames] to retrieve the name stack
+// For custom logging formats, use [Names] to retrieve the name stack
 // and implement your own logging decorator.
 func WithSlogging[T any](level slog.Level, step Step[T]) Step[T] {
 	return func(ctx context.Context, t T) error {
-		names := StepNames(ctx)
+		names := Names(ctx)
 		var fullName string
 		if len(names) == 0 {
 			fullName = "<unknown>"

@@ -220,3 +220,87 @@ func contains(substring string) func(error) error {
 		return nil
 	}
 }
+
+// ==== Test Helpers: Trace Testing ====
+
+// traceValidator is a function that validates trace properties.
+type traceValidator func(*Trace) error
+
+// runTraceTest is a helper that runs a traced workflow and validates the trace.
+func runTraceTest(t *testing.T, step Step[*CountingFlow], validators ...traceValidator) {
+	t.Helper()
+	ctx := t.Context()
+	state := &CountingFlow{}
+	trace, _ := Traced(step)(ctx, state)
+
+	// Run validators
+	for _, validator := range validators {
+		if validator == nil {
+			continue
+		}
+		if err := validator(trace); err != nil {
+			t.Error(err)
+		}
+	}
+}
+
+// expectEvents returns a validator that checks the number of events.
+func expectEvents(count int) traceValidator {
+	return func(trace *Trace) error {
+		events := trace.Events
+		if len(events) != count {
+			return fmt.Errorf("expected %d events, got %d", count, len(events))
+		}
+		return nil
+	}
+}
+
+// expectEventNames returns a validator that checks event names match the expected sequence.
+func expectEventNames(expectedNames ...string) traceValidator {
+	return func(trace *Trace) error {
+		events := trace.Events
+		if len(events) != len(expectedNames) {
+			return fmt.Errorf("expected %d events, got %d", len(expectedNames), len(events))
+		}
+		for i, event := range events {
+			if len(event.Names) == 0 {
+				return fmt.Errorf("event %d has no names", i)
+			}
+			lastName := event.Names[len(event.Names)-1]
+			if lastName != expectedNames[i] {
+				return fmt.Errorf("event %d: expected name %q, got %q", i, expectedNames[i], lastName)
+			}
+		}
+		return nil
+	}
+}
+
+// expectEventPath returns a validator that checks a specific event's full path.
+func expectEventPath(eventIdx int, expectedPath []string) traceValidator {
+	return func(trace *Trace) error {
+		events := trace.Events
+		if eventIdx >= len(events) {
+			return fmt.Errorf("event index %d out of range (have %d events)", eventIdx, len(events))
+		}
+		event := events[eventIdx]
+		if len(event.Names) != len(expectedPath) {
+			return fmt.Errorf("event %d: expected path length %d, got %d", eventIdx, len(expectedPath), len(event.Names))
+		}
+		for i, name := range expectedPath {
+			if event.Names[i] != name {
+				return fmt.Errorf("event %d path[%d]: expected %q, got %q", eventIdx, i, name, event.Names[i])
+			}
+		}
+		return nil
+	}
+}
+
+// expectErrorCount returns a validator that checks the number of errors in the trace.
+func expectErrorCount(count int) traceValidator {
+	return func(trace *Trace) error {
+		if trace.TotalErrors != count {
+			return fmt.Errorf("expected %d errors, got %d", count, trace.TotalErrors)
+		}
+		return nil
+	}
+}
