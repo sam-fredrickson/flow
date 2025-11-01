@@ -17,6 +17,31 @@ During the **v0.x series**, breaking API changes may occur between minor version
 ## [Unreleased]
 
 ### Added
+- (None yet - features will be added in future releases)
+
+### Changed
+- (None yet)
+
+### Deprecated
+- (None yet)
+
+### Removed
+- (None yet)
+
+### Fixed
+- (None yet)
+
+### Security
+- (None yet)
+
+---
+
+## [0.2.0] - 2025-11-01
+
+### Added
+
+#### Step Construction and Composition
+- `Value()` combinator for creating Extracts that return constant values
 
 #### Execution Tracing
 - `Traced()` function to wrap workflows and record execution events
@@ -36,18 +61,6 @@ During the **v0.x series**, breaking API changes may occur between minor version
 - **BREAKING**: `StepNames()` renamed to `Names()` for consistency with naming decorator patterns
 - `Named`, `NamedExtract`, `NamedTransform`, `NamedConsume`, and `AutoNamed*` variants now maintain names in unified context structure
 - Unified `flowCtx` architecture consolidating trace, names, and loggers into single efficient context value
-
-### Deprecated
-- (None yet)
-
-### Removed
-- (None yet)
-
-### Fixed
-- (None yet)
-
-### Security
-- (None yet)
 
 ---
 
@@ -168,5 +181,6 @@ For security vulnerabilities, please contact samfredrickson@gmail.com privately 
 
 ---
 
-[Unreleased]: https://github.com/sam-fredrickson/flow/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/sam-fredrickson/flow/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/sam-fredrickson/flow/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/sam-fredrickson/flow/releases/tag/v0.1.0
