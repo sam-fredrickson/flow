@@ -55,7 +55,7 @@ var benchmarkResult int
 
 // Benchmark 1: Direct function calls (traditional style).
 func BenchmarkDirect_10Steps(b *testing.B) {
-	ctx := context.Background()
+	ctx := b.Context()
 	var s *SimpleState
 
 	b.ResetTimer()
@@ -98,7 +98,7 @@ func BenchmarkDirect_10Steps(b *testing.B) {
 
 // Benchmark 2: Pre-constructed closures called manually (flow style, no combinator).
 func BenchmarkClosure_10Steps(b *testing.B) {
-	ctx := context.Background()
+	ctx := b.Context()
 	var s *SimpleState
 
 	// Pre-construct all closures outside the benchmark
@@ -153,7 +153,7 @@ func BenchmarkClosure_10Steps(b *testing.B) {
 
 // Benchmark 3: Using Do combinator (pre-constructed workflow).
 func BenchmarkFlowDo_10Steps(b *testing.B) {
-	ctx := context.Background()
+	ctx := b.Context()
 	var s *SimpleState
 
 	workflow := flow.Do(
@@ -183,7 +183,7 @@ func BenchmarkFlowDo_10Steps(b *testing.B) {
 
 // Benchmark 4: Direct function calls with construction (baseline - no construction cost).
 func BenchmarkDirectCreation_10Steps(b *testing.B) {
-	ctx := context.Background()
+	ctx := b.Context()
 	var s *SimpleState
 
 	b.ResetTimer()
@@ -226,7 +226,7 @@ func BenchmarkDirectCreation_10Steps(b *testing.B) {
 
 // Benchmark 5: Closure creation + calls (measures creation overhead).
 func BenchmarkClosureCreation_10Steps(b *testing.B) {
-	ctx := context.Background()
+	ctx := b.Context()
 	var s *SimpleState
 
 	b.ResetTimer()
@@ -279,7 +279,7 @@ func BenchmarkClosureCreation_10Steps(b *testing.B) {
 
 // Benchmark 6: Do combinator creation + execution (measures full overhead).
 func BenchmarkFlowDoCreation_10Steps(b *testing.B) {
-	ctx := context.Background()
+	ctx := b.Context()
 	var s *SimpleState
 
 	b.ResetTimer()
@@ -309,7 +309,7 @@ func BenchmarkFlowDoCreation_10Steps(b *testing.B) {
 
 // Benchmark 7: Nested combinators (realistic flow usage - pre-constructed).
 func BenchmarkFlowNested_10Steps(b *testing.B) {
-	ctx := context.Background()
+	ctx := b.Context()
 	var s *SimpleState
 
 	// Simulates a more realistic flow with nested combinators

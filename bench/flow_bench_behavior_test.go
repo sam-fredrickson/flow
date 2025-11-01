@@ -3,7 +3,6 @@
 package flow_test
 
 import (
-	"context"
 	"reflect"
 	"sort"
 	"testing"
@@ -31,7 +30,7 @@ func TestBehaviorMatch_Simple(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 
 			// Run flow version
 			flowState := newDeploymentState(BenchConfig{})
@@ -86,7 +85,7 @@ func TestBehaviorMatch_Full(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 
 			// Run flow version
 			flowState := newDeploymentState(BenchConfig{})
@@ -113,7 +112,7 @@ func TestBehaviorMatch_Full(t *testing.T) {
 
 // TestWorkflowSteps_Flow verifies the flow implementation executes all expected steps.
 func TestWorkflowSteps_Flow(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	state := newDeploymentState(BenchConfig{})
 
 	err := DeployWorkflow_Flow()(ctx, state)
@@ -157,7 +156,7 @@ func TestWorkflowSteps_Flow(t *testing.T) {
 // TestWorkflowSteps_Traditional verifies the traditional implementation executes
 // all expected steps.
 func TestWorkflowSteps_Traditional(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	state := newDeploymentState(BenchConfig{})
 
 	err := deployWorkflow_Traditional(ctx, state)
@@ -200,7 +199,7 @@ func TestWorkflowSteps_Traditional(t *testing.T) {
 
 // TestRetryBehavior verifies that retry logic works correctly in both implementations.
 func TestRetryBehavior(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Flow version
 	flowState := newDeploymentState(BenchConfig{})
@@ -244,7 +243,7 @@ func TestConditionalExecution(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 
 			// Flow version
 			flowState := newDeploymentState(BenchConfig{})

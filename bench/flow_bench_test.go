@@ -350,7 +350,7 @@ func BenchmarkFlow_Simple(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				state := newDeploymentState(benchCfg)
-				if err := simpleWorkflow(context.Background(), state); err != nil {
+				if err := simpleWorkflow(b.Context(), state); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -382,7 +382,7 @@ func BenchmarkTraditional_Simple(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				state := newDeploymentState(benchCfg)
-				if err := simpleWorkflow(context.Background(), state); err != nil {
+				if err := simpleWorkflow(b.Context(), state); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -414,7 +414,7 @@ func BenchmarkFlow_Parallel(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				state := newDeploymentState(benchCfg)
-				if err := parallelWorkflow(context.Background(), state); err != nil {
+				if err := parallelWorkflow(b.Context(), state); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -440,7 +440,7 @@ func BenchmarkTraditional_Parallel(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				state := newDeploymentState(benchCfg)
-				if err := deployServicesParallel(context.Background(), state); err != nil {
+				if err := deployServicesParallel(b.Context(), state); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -466,7 +466,7 @@ func BenchmarkFlow_Full(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				state := newDeploymentState(benchCfg)
-				if err := DeployWorkflow_Flow()(context.Background(), state); err != nil {
+				if err := DeployWorkflow_Flow()(b.Context(), state); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -492,7 +492,7 @@ func BenchmarkFlow_FullStatic(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				state := newDeploymentState(benchCfg)
-				if err := DeployWorkflow_FlowStatic(context.Background(), state); err != nil {
+				if err := DeployWorkflow_FlowStatic(b.Context(), state); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -518,7 +518,7 @@ func BenchmarkTraditional_Full(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				state := newDeploymentState(benchCfg)
-				if err := deployWorkflow_Traditional(context.Background(), state); err != nil {
+				if err := deployWorkflow_Traditional(b.Context(), state); err != nil {
 					b.Fatal(err)
 				}
 			}

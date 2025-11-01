@@ -85,7 +85,7 @@ func TestLogger(t *testing.T) {
 
 	t.Run("ReturnsDefaultWhenNotSet", func(t *testing.T) {
 		t.Parallel()
-		ctx := context.Background()
+		ctx := t.Context()
 		logger := Logger(ctx)
 		if logger != log.Default() {
 			t.Errorf("expected log.Default(), got different logger")
@@ -106,7 +106,7 @@ func TestLogger(t *testing.T) {
 		})
 
 		var c CountingFlow
-		err := step(context.Background(), &c)
+		err := step(t.Context(), &c)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -118,7 +118,7 @@ func TestSlogger(t *testing.T) {
 
 	t.Run("ReturnsDefaultWhenNotSet", func(t *testing.T) {
 		t.Parallel()
-		ctx := context.Background()
+		ctx := t.Context()
 		logger := Slogger(ctx)
 		if logger != slog.Default() {
 			t.Errorf("expected slog.Default(), got different logger")
@@ -139,7 +139,7 @@ func TestSlogger(t *testing.T) {
 		})
 
 		var c CountingFlow
-		err := step(context.Background(), &c)
+		err := step(t.Context(), &c)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -157,7 +157,7 @@ func TestWithLogging(t *testing.T) {
 		step := WithLogger(logger, WithLogging(Increment(1)))
 
 		var c CountingFlow
-		err := step(context.Background(), &c)
+		err := step(t.Context(), &c)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -181,7 +181,7 @@ func TestWithLogging(t *testing.T) {
 				WithLogging(Increment(1))))
 
 		var c CountingFlow
-		err := step(context.Background(), &c)
+		err := step(t.Context(), &c)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -207,7 +207,7 @@ func TestWithLogging(t *testing.T) {
 						WithLogging(Increment(1))))))
 
 		var c CountingFlow
-		err := step(context.Background(), &c)
+		err := step(t.Context(), &c)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -233,7 +233,7 @@ func TestWithLogging(t *testing.T) {
 		logger := log.New(io.Discard, "", 0)
 		step := WithLogger(logger, Named("test", WithLogging(Increment(1))))
 		var c CountingFlow
-		err := step(context.Background(), &c)
+		err := step(t.Context(), &c)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -251,7 +251,7 @@ func TestWithSlogging(t *testing.T) {
 		step := WithSlogger(logger, WithSlogging(slog.LevelInfo, Increment(1)))
 
 		var c CountingFlow
-		err := step(context.Background(), &c)
+		err := step(t.Context(), &c)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -288,7 +288,7 @@ func TestWithSlogging(t *testing.T) {
 				WithSlogging(slog.LevelInfo, Increment(1))))
 
 		var c CountingFlow
-		err := step(context.Background(), &c)
+		err := step(t.Context(), &c)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -318,7 +318,7 @@ func TestWithSlogging(t *testing.T) {
 						WithSlogging(slog.LevelDebug, Increment(1))))))
 
 		var c CountingFlow
-		err := step(context.Background(), &c)
+		err := step(t.Context(), &c)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -374,7 +374,7 @@ func TestWithSlogging(t *testing.T) {
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 		step := WithSlogger(logger, Named("test", WithSlogging(slog.LevelInfo, Increment(1))))
 		var c CountingFlow
-		err := step(context.Background(), &c)
+		err := step(t.Context(), &c)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
