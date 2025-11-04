@@ -10,6 +10,10 @@ lint:
 test:
     go test -v -count=1 ./...
 
+# Run all tests with race detection
+test-race:
+    go test -v -count=1 -race ./...
+
 # Run all tests & generate coverage report
 test-cover:
      go test -coverprofile=coverage.out -coverpkg=.  ./...
