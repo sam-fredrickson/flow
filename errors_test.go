@@ -222,6 +222,19 @@ func TestOnError(t *testing.T) {
 			expectedCounter: 11, // 1 from fail + 10 from fallback
 			validator:       isNil,
 		},
+		{
+			name: "NilFallbackSwallowsError",
+			step: OnError(
+				IncrementAndFail(error1),
+				func(_ context.Context, _ *CountingFlow, err error) (Step[*CountingFlow], error) {
+					// `return nil, nil` is what we're testing!
+					//nolint:nilnil
+					return nil, nil // Swallow the error
+				},
+			),
+			expectedCounter: 1,
+			validator:       isNil,
+		},
 	}
 
 	for _, tc := range testCases {

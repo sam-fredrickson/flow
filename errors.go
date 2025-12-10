@@ -50,7 +50,9 @@ func RecoverPanics[T any](step Step[T]) Step[T] {
 // strategies.
 //
 // If onError itself returns an error, that error is propagated and no fallback
-// step is executed.
+// step is executed. If onError returns (nil, nil), the error is considered
+// handled and OnError returns nil (success). This allows selectively swallowing
+// certain errors while propagating others.
 //
 // Example:
 //
@@ -63,6 +65,9 @@ func RecoverPanics[T any](step Step[T]) Step[T] {
 //	        if errors.Is(err, ErrRateLimit) {
 //	            return RetryAfterDelay, nil
 //	        }
+//	        if errors.Is(err, ErrNotFound) {
+//	            return nil, nil // Not found is acceptable, treat as success
+//	        }
 //	        return nil, fmt.Errorf("unrecoverable: %w", err)
 //	    },
 //	)
@@ -72,6 +77,9 @@ func OnError[T any](step Step[T], onError Transform[T, error, Step[T]]) Step[T] 
 			fallback, err := onError(ctx, t, err)
 			if err != nil {
 				return err
+			}
+			if fallback == nil {
+				return nil
 			}
 			return fallback(ctx, t)
 		}
