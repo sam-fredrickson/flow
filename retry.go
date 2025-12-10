@@ -203,10 +203,13 @@ func FixedBackoff(delay time.Duration, opts ...BackoffOption) RetryPredicate {
 			actualDelay = cfg.maxDelay
 		}
 
+		timer := time.NewTimer(actualDelay)
+		defer timer.Stop()
+
 		select {
 		case <-ctx.Done():
 			return false
-		case <-time.After(actualDelay):
+		case <-timer.C:
 			return true
 		}
 	}
@@ -279,10 +282,13 @@ func ExponentialBackoff(base time.Duration, opts ...BackoffOption) RetryPredicat
 			delay = cfg.maxDelay
 		}
 
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+
 		select {
 		case <-ctx.Done():
 			return false
-		case <-time.After(delay):
+		case <-timer.C:
 			return true
 		}
 	}

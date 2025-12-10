@@ -135,8 +135,11 @@ func WithDeadline[T any](deadline time.Time, step Step[T]) Step[T] {
 //	)
 func Sleep[T any](duration time.Duration) Step[T] {
 	return func(ctx context.Context, t T) error {
+		timer := time.NewTimer(duration)
+		defer timer.Stop()
+
 		select {
-		case <-time.After(duration):
+		case <-timer.C:
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()
