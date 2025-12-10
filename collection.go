@@ -53,6 +53,13 @@ func (e *IndexedError) Unwrap() error {
 //	}
 var ErrExhausted = errors.New("extraction exhausted")
 
+// ErrNilStep indicates that a step-creating function returned nil.
+//
+// This error is returned by [Map] when the provided function returns a nil step.
+// A nil step would cause a panic when executed, so Map detects this early and
+// returns an [IndexedError] wrapping ErrNilStep.
+var ErrNilStep = errors.New("step function returned nil")
+
 // Map lifts a function from A to Step[T] into a [Transform] from []A to
 // []Step[T].
 //
@@ -85,6 +92,9 @@ func Map[T any, A any](
 		steps := make([]Step[T], len(as))
 		for i, a := range as {
 			steps[i] = f(a)
+			if steps[i] == nil {
+				return nil, &IndexedError{Index: i, Err: ErrNilStep}
+			}
 		}
 		return steps, nil
 	}

@@ -88,6 +88,24 @@ func TestFromMap(t *testing.T) {
 			expectedCounter: 0,
 			validator:       matches(error1),
 		},
+		{
+			name: "NilStep",
+			step: InSerial(
+				ForEach(
+					func(_ context.Context, _ *CountingFlow) ([]int64, error) {
+						return []int64{1, 2, 3}, nil
+					},
+					func(n int64) Step[*CountingFlow] {
+						if n == 2 {
+							return nil
+						}
+						return Increment(n)
+					},
+				),
+			),
+			expectedCounter: 0,
+			validator:       matches(ErrNilStep),
+		},
 	}
 
 	for _, tc := range testCases {
