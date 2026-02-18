@@ -273,7 +273,7 @@ func updateDNS(ctx context.Context, s *DeploymentState) error {
 func updateDNSWithRetry(ctx context.Context, s *DeploymentState) error {
 	var lastErr error
 	backoff := 1 * time.Microsecond
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := range 3 {
 		if attempt > 0 {
 			time.Sleep(backoff)
 			backoff *= 2

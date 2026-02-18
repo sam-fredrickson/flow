@@ -260,7 +260,7 @@ func TestWithSlogging(t *testing.T) {
 		lines := strings.Split(strings.TrimSpace(output), "\n")
 
 		// Parse first log entry
-		var log1 map[string]interface{}
+		var log1 map[string]any
 		if err := json.Unmarshal([]byte(lines[0]), &log1); err != nil {
 			t.Fatalf("failed to parse first log line: %v", err)
 		}
@@ -269,7 +269,7 @@ func TestWithSlogging(t *testing.T) {
 		}
 
 		// Parse second log entry
-		var log2 map[string]interface{}
+		var log2 map[string]any
 		if err := json.Unmarshal([]byte(lines[1]), &log2); err != nil {
 			t.Fatalf("failed to parse second log line: %v", err)
 		}
@@ -296,7 +296,7 @@ func TestWithSlogging(t *testing.T) {
 		output := buf.String()
 		lines := strings.Split(strings.TrimSpace(output), "\n")
 
-		var log1 map[string]interface{}
+		var log1 map[string]any
 		if err := json.Unmarshal([]byte(lines[0]), &log1); err != nil {
 			t.Fatalf("failed to parse first log line: %v", err)
 		}
@@ -332,7 +332,7 @@ func TestWithSlogging(t *testing.T) {
 		}
 
 		// Check outer starting
-		var log1 map[string]interface{}
+		var log1 map[string]any
 		if err := json.Unmarshal([]byte(lines[0]), &log1); err != nil {
 			t.Fatalf("failed to parse log line 1: %v", err)
 		}
@@ -341,7 +341,7 @@ func TestWithSlogging(t *testing.T) {
 		}
 
 		// Check outer.inner starting
-		var log2 map[string]interface{}
+		var log2 map[string]any
 		if err := json.Unmarshal([]byte(lines[1]), &log2); err != nil {
 			t.Fatalf("failed to parse log line 2: %v", err)
 		}
@@ -350,7 +350,7 @@ func TestWithSlogging(t *testing.T) {
 		}
 
 		// Check outer.inner finished
-		var log3 map[string]interface{}
+		var log3 map[string]any
 		if err := json.Unmarshal([]byte(lines[2]), &log3); err != nil {
 			t.Fatalf("failed to parse log line 3: %v", err)
 		}
@@ -359,7 +359,7 @@ func TestWithSlogging(t *testing.T) {
 		}
 
 		// Check outer finished
-		var log4 map[string]interface{}
+		var log4 map[string]any
 		if err := json.Unmarshal([]byte(lines[3]), &log4); err != nil {
 			t.Fatalf("failed to parse log line 4: %v", err)
 		}

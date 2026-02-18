@@ -245,7 +245,7 @@ func generateMockPageData(pageNum int) []RawRecord {
 	baseID := (pageNum - 1) * 10
 	records := make([]RawRecord, 10)
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		id := baseID + i + 1
 		records[i] = RawRecord{
 			ID:        fmt.Sprintf("rec-%03d", id),

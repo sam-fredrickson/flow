@@ -250,10 +250,7 @@ func ExponentialBackoff(base time.Duration, opts ...BackoffOption) RetryPredicat
 		if cfg.multiplier == 2.0 {
 			// Use bit-shifting for the common case (multiplier = 2.0)
 			// #nosec G115 -- attempts >= 1, conversion is safe
-			shift := uint(attempts) - 1
-			if shift > 62 {
-				shift = 62
-			}
+			shift := min(uint(attempts)-1, 62)
 			delay = base * time.Duration(1<<shift)
 			if delay.Seconds() == 0 {
 				delay = base

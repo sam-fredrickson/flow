@@ -245,7 +245,7 @@ func TestTraceThreadSafety(t *testing.T) {
 
 	// Concurrent access to trace fields
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -443,7 +443,7 @@ func TestTraceEdgeCases(t *testing.T) {
 			step: func() Step[*CountingFlow] {
 				const eventCount = 1000
 				steps := make([]Step[*CountingFlow], eventCount)
-				for i := 0; i < eventCount; i++ {
+				for i := range eventCount {
 					name := strings.Repeat("x", i%100+1)
 					steps[i] = Named(name, Increment(1))
 				}

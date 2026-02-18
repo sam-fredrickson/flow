@@ -67,7 +67,7 @@ func BenchmarkNamedDeeplyNested(b *testing.B) {
 		b.Run(depthName, func(b *testing.B) {
 			// Build nested workflow
 			var step = Increment(1)
-			for i := 0; i < depth; i++ {
+			for i := range depth {
 				levelName := fmt.Sprintf("level%02d", i)
 				step = flow.Named(levelName, step)
 			}
@@ -108,7 +108,7 @@ func BenchmarkTraceConcurrentAccess(b *testing.B) {
 		b.Run(countName, func(b *testing.B) {
 			// Build workflow with many parallel steps
 			steps := make([]flow.Step[*CountingFlow], count)
-			for i := 0; i < count; i++ {
+			for i := range count {
 				stepName := fmt.Sprintf("step%03d", i)
 				steps[i] = flow.Named(stepName, Increment(1))
 			}
@@ -136,7 +136,7 @@ func BenchmarkTraceFilter(b *testing.B) {
 		b.Run(countName, func(b *testing.B) {
 			// Create workflow with many events
 			steps := make([]flow.Step[*CountingFlow], eventCount)
-			for i := 0; i < eventCount; i++ {
+			for i := range eventCount {
 				stepName := fmt.Sprintf("step%04d", i)
 				steps[i] = flow.Named(stepName, Increment(1))
 			}
@@ -229,7 +229,7 @@ func BenchmarkStreamingOverhead(b *testing.B) {
 
 		// Build workflow with many steps
 		steps := make([]flow.Step[*CountingFlow], count)
-		for i := 0; i < count; i++ {
+		for i := range count {
 			stepName := fmt.Sprintf("step%03d", i)
 			steps[i] = flow.Named(stepName, Increment(1))
 		}
@@ -303,7 +303,7 @@ func BenchmarkTraceMemoryAllocations(b *testing.B) {
 	// Deep nesting
 	b.Run("deep_nesting_20", func(b *testing.B) {
 		var step = Increment(1)
-		for i := 0; i < 20; i++ {
+		for i := range 20 {
 			name := fmt.Sprintf("level%02d", i)
 			step = flow.Named(name, step)
 		}
