@@ -77,6 +77,9 @@ func While[T any](
 ) Step[T] {
 	return func(ctx context.Context, t T) error {
 		for {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			ok, err := predicate(ctx, t)
 			if err != nil {
 				return err

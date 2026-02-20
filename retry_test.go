@@ -5,6 +5,7 @@ package flow
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -219,6 +220,33 @@ func TestRetryBackoff(t *testing.T) {
 			t.Errorf("expected counter to be 1, got %d", c.Counter)
 		}
 	})
+}
+
+func TestRetryRespectsContextCancellation(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	var c CountingFlow
+	// The step cancels the context but returns a retryable error.
+	// With UpTo(10) and no backoff, only the loop's own ctx.Err()
+	// check can prevent further attempts.
+	step := Retry(
+		func(_ context.Context, cf *CountingFlow) error {
+			atomic.AddInt64(&cf.Counter, 1)
+			cancel()
+			return errors.New("retryable")
+		},
+		UpTo(10),
+	)
+
+	err := step(ctx, &c)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+	if c.Counter != 1 {
+		t.Errorf("expected counter 1, got %d", c.Counter)
+	}
 }
 
 func TestBackoffOptions(t *testing.T) {

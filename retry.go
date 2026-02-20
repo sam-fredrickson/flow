@@ -150,6 +150,9 @@ func Retry[T any](
 	return func(ctx context.Context, t T) error {
 		attempts := 0
 		for {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			err := step(ctx, t)
 			if err == nil {
 				return nil

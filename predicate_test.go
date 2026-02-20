@@ -233,6 +233,35 @@ func TestWhile(t *testing.T) {
 			t.Errorf("expected at least 1 iteration, got %d", c.Counter)
 		}
 	})
+
+	t.Run("RespectsContextCancellation", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+
+		var c CountingFlow
+		// The step cancels the context but does NOT return an error
+		// and the predicate does NOT check ctx — so only the loop's
+		// own ctx.Err() check can stop it.
+		step := While(
+			func(_ context.Context, cf *CountingFlow) (bool, error) {
+				return cf.Counter < 10, nil
+			},
+			func(_ context.Context, cf *CountingFlow) error {
+				atomic.AddInt64(&cf.Counter, 1)
+				cancel()
+				return nil
+			},
+		)
+
+		err := step(ctx, &c)
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context.Canceled, got %v", err)
+		}
+		if c.Counter != 1 {
+			t.Errorf("expected counter 1, got %d", c.Counter)
+		}
+	})
 }
 
 func TestNot(t *testing.T) {

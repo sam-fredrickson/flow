@@ -5,6 +5,7 @@ package flow
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 )
 
@@ -124,4 +125,145 @@ func TestStepsProviderErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestJoinErrorsRespectsContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	// cancelAndIncrement returns a step that increments the counter and
+	// cancels the context. Critically, it does NOT return an error and does
+	// NOT check ctx.Err() — so the only thing that can stop subsequent
+	// steps is the loop itself.
+	cancelAndIncrement := func(cancel context.CancelFunc) Step[*CountingFlow] {
+		return func(_ context.Context, c *CountingFlow) error {
+			atomic.AddInt64(&c.Counter, 1)
+			cancel()
+			return nil
+		}
+	}
+
+	// cancellingProvider increments the counter and cancels the context
+	// during provider expansion (before any steps run).
+	cancellingProvider := func(cancel context.CancelFunc) StepsProvider[*CountingFlow] {
+		return func(_ context.Context, c *CountingFlow) ([]Step[*CountingFlow], error) {
+			atomic.AddInt64(&c.Counter, 1)
+			cancel()
+			return nil, nil
+		}
+	}
+
+	// countingProvider increments the counter during expansion. Used to
+	// detect whether a provider was expanded when it shouldn't have been.
+	countingProvider := func(_ context.Context, c *CountingFlow) ([]Step[*CountingFlow], error) {
+		atomic.AddInt64(&c.Counter, 1)
+		return nil, nil
+	}
+
+	t.Run("DoWith stops steps after cancellation", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+
+		var c CountingFlow
+		step := DoWith(Options{JoinErrors: true},
+			cancelAndIncrement(cancel),
+			Increment(1),
+			Increment(1),
+		)
+
+		err := step(ctx, &c)
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context.Canceled, got %v", err)
+		}
+		if c.Counter != 1 {
+			t.Errorf("expected counter 1, got %d", c.Counter)
+		}
+	})
+
+	t.Run("InSerialWith stops steps after cancellation", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+
+		var c CountingFlow
+		step := InSerialWith(Options{JoinErrors: true},
+			Steps(
+				cancelAndIncrement(cancel),
+				Increment(1),
+				Increment(1),
+			),
+		)
+
+		err := step(ctx, &c)
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context.Canceled, got %v", err)
+		}
+		if c.Counter != 1 {
+			t.Errorf("expected counter 1, got %d", c.Counter)
+		}
+	})
+
+	t.Run("InSerialWith stops providers after cancellation", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+
+		var c CountingFlow
+		step := InSerialWith(Options{JoinErrors: true},
+			cancellingProvider(cancel),
+			countingProvider,
+		)
+
+		err := step(ctx, &c)
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context.Canceled, got %v", err)
+		}
+		if c.Counter != 1 {
+			t.Errorf("expected counter 1, got %d", c.Counter)
+		}
+	})
+
+	t.Run("InParallelWith stops providers after cancellation", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+
+		var c CountingFlow
+		step := InParallelWith(ParallelOptions{JoinErrors: true},
+			cancellingProvider(cancel),
+			countingProvider,
+		)
+
+		err := step(ctx, &c)
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context.Canceled, got %v", err)
+		}
+		if c.Counter != 1 {
+			t.Errorf("expected counter 1, got %d", c.Counter)
+		}
+	})
+
+	t.Run("InParallelWith stops scheduling after cancellation", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+
+		var c CountingFlow
+		step := InParallelWith(
+			ParallelOptions{JoinErrors: true, Limit: 1},
+			Steps(
+				cancelAndIncrement(cancel),
+				Increment(1),
+				Increment(1),
+			),
+		)
+
+		err := step(ctx, &c)
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context.Canceled, got %v", err)
+		}
+		if c.Counter != 1 {
+			t.Errorf("expected counter 1, got %d", c.Counter)
+		}
+	})
 }

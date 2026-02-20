@@ -22,8 +22,10 @@ type Options struct {
 	// By default, when false, the first step that returns an error stops
 	// execution and that error is returned immediately.
 	//
-	// If enabled, all steps are run to completion regardless of errors, and a
-	// combined `errors.Join` error of all non-nil errors is returned.
+	// If enabled, all steps are run to completion regardless of step errors,
+	// and a combined [errors.Join] error of all non-nil errors is returned.
+	// Context cancellation still stops execution immediately; the context
+	// error is included in the joined result.
 	JoinErrors bool
 }
 
@@ -63,6 +65,13 @@ func DoWith[T any](opts Options, steps ...Step[T]) Step[T] {
 	return func(ctx context.Context, t T) error {
 		var errs []error
 		for _, step := range steps {
+			if err := ctx.Err(); err != nil {
+				if !opts.JoinErrors {
+					return err
+				}
+				errs = append(errs, err)
+				break
+			}
 			if err := step(ctx, t); err != nil {
 				if !opts.JoinErrors {
 					return err
@@ -98,6 +107,13 @@ func InSerialWith[T any](
 	return func(ctx context.Context, t T) error {
 		var errs []error
 		for _, provider := range providers {
+			if err := ctx.Err(); err != nil {
+				if !opts.JoinErrors {
+					return err
+				}
+				errs = append(errs, err)
+				break
+			}
 			steps, err := provider(ctx, t)
 			if err != nil {
 				if !opts.JoinErrors {
@@ -107,6 +123,13 @@ func InSerialWith[T any](
 				continue
 			}
 			for _, step := range steps {
+				if err := ctx.Err(); err != nil {
+					if !opts.JoinErrors {
+						return err
+					}
+					errs = append(errs, err)
+					break
+				}
 				if err := step(ctx, t); err != nil {
 					if !opts.JoinErrors {
 						return err
@@ -132,8 +155,11 @@ type ParallelOptions struct {
 	// the rest, and this first error is returned. (This is the behavior of
 	// the `errgroup` package.)
 	//
-	// If enabled, all steps are run to completion regardless of errors, and a
-	// combined `errors.Join` error of all non-nil errors is returned.
+	// If enabled, all steps are run to completion regardless of step errors,
+	// and a combined [errors.Join] error of all non-nil errors is returned.
+	// Context cancellation still stops execution immediately; no new
+	// goroutines are scheduled and the context error is included in the
+	// joined result.
 	JoinErrors bool
 }
 
@@ -156,6 +182,9 @@ func InParallelWith[T any](
 		// expand all providers sequentially to get all steps
 		var allSteps []Step[T]
 		for _, next := range providers {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			steps, err := next(ctx, t)
 			if err != nil {
 				return err
@@ -189,7 +218,17 @@ func InParallelWith[T any](
 
 		// run steps
 		for _, step := range allSteps {
+			if err := ctx.Err(); err != nil {
+				break
+			}
 			group.Go(func() error {
+				if err := subCtx.Err(); err != nil {
+					if opts.JoinErrors {
+						errs <- err
+						return nil
+					}
+					return err
+				}
 				err := step(subCtx, t)
 				if opts.JoinErrors {
 					errs <- err
