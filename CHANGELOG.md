@@ -16,23 +16,19 @@ During the **v0.x series**, breaking API changes may occur between minor version
 
 ## [Unreleased]
 
-### Added
-- (None yet - features will be added in future releases)
+---
 
-### Changed
-- (None yet)
-
-### Deprecated
-- (None yet)
-
-### Removed
-- (None yet)
+## [0.2.1] - 2026-02-19
 
 ### Fixed
-- (None yet)
+- `Map` now detects nil steps returned by the mapping function and returns an `IndexedError` wrapping `ErrNilStep` instead of panicking at execution time
+- `OnError` now handles a nil fallback step (returned as `nil, nil` from the error handler) to allow selectively swallowing errors
+- `Sleep` and retry backoff delays now use `time.NewTimer` with deferred `Stop` instead of `time.After` to prevent potential timer leaks
 
-### Security
-- (None yet)
+### Changed
+- Bump `golang.org/x/sync` from 0.17.0 to 0.19.0
+- Apply `go fix` modernizations (integer range loops, `any` instead of `interface{}`, `min` builtin)
+- Add `test-race` recipe to justfile
 
 ---
 
@@ -181,6 +177,7 @@ For security vulnerabilities, please contact samfredrickson@gmail.com privately 
 
 ---
 
-[Unreleased]: https://github.com/sam-fredrickson/flow/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/sam-fredrickson/flow/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/sam-fredrickson/flow/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/sam-fredrickson/flow/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/sam-fredrickson/flow/releases/tag/v0.1.0
