@@ -155,6 +155,33 @@
 // steps are traced—unnamed steps are ignored. See [Traced], [Named], and
 // the examples/tracing/ directory for more details.
 //
+// # Workflow-Scoped Values
+//
+// Flow provides a typed, workflow-scoped key-value store for passing
+// cross-cutting configuration (tags, feature flags, dry-run mode) through
+// the step hierarchy—including across [Spawn] boundaries where state T changes.
+//
+// Create keys with [NewKey], set values with [WithValue], and retrieve them
+// with [Lookup]:
+//
+//	var DryRun = flow.NewKey[bool]("dry-run")
+//
+//	step := flow.WithValue(DryRun, true,
+//	    flow.Named("deploy", func(ctx context.Context, s *State) error {
+//	        if dry, ok := flow.Lookup(ctx, DryRun); ok && dry {
+//	            return nil // skip side effects
+//	        }
+//	        return realDeploy(ctx, s)
+//	    }),
+//	)
+//
+// Keys are identified by unique ID, not by name—two calls to [NewKey] with
+// the same name produce distinct keys. The underlying store is shared across
+// the entire workflow and protected by a read-write mutex for concurrent access.
+//
+// See the examples/tags/ directory for a practical tag-based selective
+// execution recipe built on top of this mechanism.
+//
 // # Naming Best Practices
 //
 // Use [Named] or [AutoNamed] liberally throughout your workflow hierarchy.

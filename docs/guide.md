@@ -13,6 +13,7 @@ A comprehensive guide to building type-safe workflows with `flow`.
 7. [Advanced Topics](#advanced-topics)
    - [State Transformation with Spawn](#state-transformation-with-spawn)
    - [Logging](#logging)
+   - [Workflow-Scoped Values](#workflow-scoped-values)
    - [Debugging](#debugging)
    - [Mega-Wrappers: Factoring Out Common Patterns](#mega-wrappers-factoring-out-common-patterns)
    - [Thread Safety in Parallel Execution](#thread-safety-in-parallel-execution)
@@ -828,6 +829,85 @@ flow.Named("parse",
 flow.WithLogging(
     flow.Named("parse", parseStep))
 ```
+
+### Workflow-Scoped Values
+
+Flow provides a typed key-value store scoped to the entire workflow. This is useful for cross-cutting configuration—feature flags, dry-run mode, tags—that needs to be visible everywhere, including across `Spawn` boundaries where the state type changes.
+
+#### API
+
+Create a key with `NewKey`, set it with `WithValue`, and read it with `Lookup`:
+
+```go
+// Package-level key declaration (each NewKey call produces a unique key)
+var DryRun = flow.NewKey[bool]("dry-run")
+
+// Set the value at the workflow root
+step := flow.WithValue(DryRun, true,
+    flow.Named("deploy", func(ctx context.Context, s *State) error {
+        if dry, ok := flow.Lookup(ctx, DryRun); ok && dry {
+            log.Println("dry-run: skipping deploy")
+            return nil
+        }
+        return realDeploy(ctx, s)
+    }),
+)
+```
+
+Key properties:
+- **Unique identity**: Two calls to `NewKey[string]("env")` produce distinct keys. Names are for debugging only.
+- **Shared mutation**: Values set anywhere are visible everywhere in the workflow. The store is a shared pointer, not cloned per step.
+- **Thread-safe**: The underlying store is protected by a read-write mutex.
+- **Self-bootstrapping**: `WithValue` works without an outer `Named` or `Traced` wrapper.
+
+#### Cross-Spawn Propagation
+
+Values propagate across `Spawn` boundaries because the key store is shared:
+
+```go
+var Region = flow.NewKey[string]("region")
+
+workflow := flow.WithValue(Region, "us-west-2",
+    flow.Spawn(
+        DeriveChildState,  // Extract[*Parent, *Child]
+        func(ctx context.Context, child *Child) error {
+            region, _ := flow.Lookup(ctx, Region) // "us-west-2"
+            return deployTo(ctx, child, region)
+        },
+    ),
+)
+```
+
+#### Recipe: Tag-Based Selective Execution
+
+A common pattern is using workflow-scoped values to implement tags that control which steps run:
+
+```go
+var ActiveTags = flow.NewKey[[]string]("active-tags")
+
+func WithTags[T any](tags []string, step flow.Step[T]) flow.Step[T] {
+    return flow.WithValue(ActiveTags, tags, step)
+}
+
+func Tagged[T any](tag string, step flow.Step[T]) flow.Step[T] {
+    return func(ctx context.Context, t T) error {
+        tags, hasTags := flow.Lookup(ctx, ActiveTags)
+        if hasTags && !slices.Contains(tags, tag) {
+            return nil // skip
+        }
+        return step(ctx, t)
+    }
+}
+
+// Usage
+workflow := flow.Do(
+    Tagged("db", setupDatabase),
+    Tagged("cache", warmCache),
+)
+WithTags([]string{"db"}, workflow) // only runs db steps
+```
+
+See `examples/tags/` for a complete runnable example.
 
 ### Debugging
 

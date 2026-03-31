@@ -16,6 +16,12 @@ During the **v0.x series**, breaking API changes may occur between minor version
 
 ## [Unreleased]
 
+### Added
+- `NewKey[V]()` for creating typed, unique workflow-scoped keys
+- `WithValue[T, V]()` for setting workflow-scoped values that propagate across `Spawn` boundaries
+- `Lookup[V]()` for retrieving workflow-scoped values from the context
+- Tag-based selective execution example in `examples/tags/`
+
 ### Fixed
 - `DoWith`, `InSerialWith`, and `InParallelWith` now check for context cancellation between steps, provider expansions, and goroutine scheduling. Previously, `JoinErrors` mode would continue executing all remaining work even after the parent context was cancelled.
 - Likewise, `While` and `Retry` now check for context cancellation between iterations. Previously, a cancelled context would only be detected if the predicate or step happened to check it.

@@ -39,6 +39,10 @@ type flowCtx struct {
 	// slogger is the active slog.Logger for structured logging.
 	// Defaults to slog.Default() if not explicitly set.
 	slogger *slog.Logger
+
+	// keys is the workflow-scoped key-value store.
+	// Shared across all flowCtx instances in the same workflow.
+	keys *keyStore
 }
 
 // Value implements context.Context.Value by intercepting flowCtxKey lookups
@@ -80,6 +84,7 @@ func newFlowCtx(parent context.Context, origin *flowCtx) *flowCtx {
 			names:   nil,
 			logger:  log.Default(),
 			slogger: slog.Default(),
+			keys:    &keyStore{m: make(map[any]any)},
 		}
 	}
 	f := &flowCtx{
@@ -88,6 +93,7 @@ func newFlowCtx(parent context.Context, origin *flowCtx) *flowCtx {
 		names:   origin.names,
 		logger:  origin.logger,
 		slogger: origin.slogger,
+		keys:    origin.keys,
 	}
 	return f
 }
