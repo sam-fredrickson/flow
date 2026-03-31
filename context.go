@@ -63,9 +63,19 @@ func (f *flowCtx) Value(key any) any {
 //   - logger: log.Default()
 //   - slogger: slog.Default()
 func newFlowCtx(parent context.Context, origin *flowCtx) *flowCtx {
+	// Skip optimization: if the parent is a *flowCtx, use its already-skipped
+	// embedded Context instead. This means consecutive flowCtx layers all point
+	// directly to the nearest non-flowCtx ancestor, making non-flowCtxKey
+	// Value() lookups O(m) instead of O(n), where m is the number of non-flowCtx
+	// contexts in the chain. It's always true that m <= n, and in typical flow
+	// execution (deep Named nesting with few user WithValue calls) m << n.
+	skip := parent
+	if fc, ok := parent.(*flowCtx); ok {
+		skip = fc.Context // already a skip target
+	}
 	if origin == nil {
 		origin = &flowCtx{
-			Context: parent,
+			Context: skip,
 			trace:   nil,
 			names:   nil,
 			logger:  log.Default(),
@@ -73,7 +83,7 @@ func newFlowCtx(parent context.Context, origin *flowCtx) *flowCtx {
 		}
 	}
 	f := &flowCtx{
-		Context: parent,
+		Context: skip,
 		trace:   origin.trace,
 		names:   origin.names,
 		logger:  origin.logger,

@@ -176,4 +176,122 @@ func TestSleep(t *testing.T) {
 	})
 }
 
+func TestFlowCtxSkipOptimization(t *testing.T) {
+	t.Parallel()
+
+	t.Run("UserValueAtRoot", func(t *testing.T) {
+		t.Parallel()
+		type testKey struct{}
+		ctx := context.WithValue(t.Context(), testKey{}, "root-value")
+		// Stack several addName layers on top
+		ctx, _ = addName(ctx, "step1")
+		ctx, _ = addName(ctx, "step2")
+		ctx, _ = addName(ctx, "step3")
+		// The root value should still be reachable
+		got := ctx.Value(testKey{})
+		if got != "root-value" {
+			t.Errorf("expected root-value, got %v", got)
+		}
+	})
+
+	t.Run("UserValueBetweenFlowLayers", func(t *testing.T) {
+		t.Parallel()
+		type testKey struct{}
+		ctx := t.Context()
+		ctx, _ = addName(ctx, "outer")
+		ctx = context.WithValue(ctx, testKey{}, "interleaved")
+		ctx, _ = addName(ctx, "inner")
+		// The interleaved value should be found
+		got := ctx.Value(testKey{})
+		if got != "interleaved" {
+			t.Errorf("expected interleaved, got %v", got)
+		}
+	})
+
+	t.Run("ConcurrentBranchesWithInterleavedValues", func(t *testing.T) {
+		t.Parallel()
+		type testKey struct{}
+		ctx := t.Context()
+		ctx, _ = addName(ctx, "root")
+		ctx = context.WithValue(ctx, testKey{}, "a")
+
+		errs := make(chan error, 2)
+
+		// Branch 1: sees "a"
+		go func() {
+			branchCtx, _ := addName(ctx, "branch1")
+			got := branchCtx.Value(testKey{})
+			if got != "a" {
+				errs <- errors.New("branch1: expected 'a', got something else")
+				return
+			}
+			errs <- nil
+		}()
+
+		// Branch 2: adds WithValue "b", should see "b"
+		go func() {
+			branchCtx := context.WithValue(ctx, testKey{}, "b")
+			branchCtx, _ = addName(branchCtx, "branch2")
+			got := branchCtx.Value(testKey{})
+			if got != "b" {
+				errs <- errors.New("branch2: expected 'b', got something else")
+				return
+			}
+			errs <- nil
+		}()
+
+		for range 2 {
+			if err := <-errs; err != nil {
+				t.Error(err)
+			}
+		}
+	})
+
+	t.Run("DeepNestingWithoutIntermediateNonFlowContexts", func(t *testing.T) {
+		t.Parallel()
+		type testKey struct{}
+		ctx := context.WithValue(t.Context(), testKey{}, "deep-root")
+		// Add many flow layers
+		for range 100 {
+			ctx, _ = addName(ctx, "layer")
+		}
+		got := ctx.Value(testKey{})
+		if got != "deep-root" {
+			t.Errorf("expected deep-root, got %v", got)
+		}
+
+		// Verify the skip optimization: the innermost flowCtx's embedded
+		// Context should point directly to the non-flowCtx ancestor.
+		fc, ok := ctx.Value(flowCtxKey{}).(*flowCtx)
+		if !ok {
+			t.Fatal("expected flowCtx")
+		}
+		if _, isFlow := fc.Context.(*flowCtx); isFlow {
+			t.Error("expected embedded Context to skip past flowCtx layers")
+		}
+	})
+
+	t.Run("FlowCtxKeyLookupsStillWork", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+		ctx, _ = addName(ctx, "a")
+		ctx, _ = addName(ctx, "b")
+		ctx, _ = addName(ctx, "c")
+
+		// Names should reflect the full stack
+		names := Names(ctx)
+		if len(names) != 3 || names[0] != "a" || names[1] != "b" || names[2] != "c" {
+			t.Errorf("expected [a b c], got %v", names)
+		}
+
+		// Logger and Slogger should return non-nil defaults
+		if Logger(ctx) == nil {
+			t.Error("expected non-nil Logger")
+		}
+		if Slogger(ctx) == nil {
+			t.Error("expected non-nil Slogger")
+		}
+	})
+}
+
 // ==== Test Fixtures ====
