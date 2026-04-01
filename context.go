@@ -43,6 +43,16 @@ type flowCtx struct {
 	// keys is the workflow-scoped key-value store.
 	// Shared across all flowCtx instances in the same workflow.
 	keys *keyStore
+
+	// scope is the active cleanup scope, if any.
+	// Shared pointer — all flowCtx instances within the same Scope point
+	// to the same cleanupScope. A nested Scope installs a fresh pointer,
+	// shadowing the parent's for its subtree.
+	scope *cleanupScope
+
+	// cleanupTimeout is the timeout for cleanup operations within a Scope.
+	// Zero means no cleanup timeout (cleanup uses the step's context as-is).
+	cleanupTimeout time.Duration
 }
 
 // Value implements context.Context.Value by intercepting flowCtxKey lookups
@@ -88,12 +98,14 @@ func newFlowCtx(parent context.Context, origin *flowCtx) *flowCtx {
 		}
 	}
 	f := &flowCtx{
-		Context: skip,
-		trace:   origin.trace,
-		names:   origin.names,
-		logger:  origin.logger,
-		slogger: origin.slogger,
-		keys:    origin.keys,
+		Context:        skip,
+		trace:          origin.trace,
+		names:          origin.names,
+		logger:         origin.logger,
+		slogger:        origin.slogger,
+		keys:           origin.keys,
+		scope:          origin.scope,
+		cleanupTimeout: origin.cleanupTimeout,
 	}
 	return f
 }

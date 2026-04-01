@@ -17,6 +17,12 @@ During the **v0.x series**, breaking API changes may occur between minor version
 ## [Unreleased]
 
 ### Added
+- Scope-based resource cleanup via `Scope`, `Manage`, and `WithCleanupTimeout`
+  - `Scope` wraps a step and runs registered cleanups in LIFO order on exit, including after panics
+  - `Manage` pairs an acquire step with a cleanup step, registering cleanup with the enclosing `Scope`
+  - `WithCleanupTimeout` gives cleanup an independent timeout detached from parent cancellation
+  - `ErrNoScope` sentinel error returned when `Manage` is called without an enclosing `Scope`
+  - Cleanup example in `examples/cleanup/`
 - `NewKey[V]()` for creating typed, unique workflow-scoped keys
 - `WithValue[T, V]()` for setting workflow-scoped values that propagate across `Spawn` boundaries
 - `Lookup[V]()` for retrieving workflow-scoped values from the context

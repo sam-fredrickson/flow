@@ -182,6 +182,36 @@
 // See the examples/tags/ directory for a practical tag-based selective
 // execution recipe built on top of this mechanism.
 //
+// # Resource Cleanup
+//
+// Flow provides scope-based resource cleanup via [Scope], [Manage], and
+// [Acquire]. Resources are registered with an enclosing [Scope] and torn
+// down in LIFO order when the scope exits. Cleanup errors are joined with
+// the step error.
+//
+// [Manage] is the primary API. It pairs an acquire [Step] with a cleanup
+// [Step] — the common case where resources are stored in state T:
+//
+//	workflow := flow.Scope(
+//	    flow.Do(
+//	        flow.Manage(OpenAndStoreConn, CloseConn),
+//	        flow.Manage(BeginAndStoreTx, RollbackTx),
+//	        DoWork,
+//	    ),
+//	)
+//
+// [Manage] returns [ErrNoScope] if no enclosing [Scope] is active.
+//
+// [WithCleanupTimeout] configures an independent timeout for cleanup, using
+// [context.WithoutCancel] to detach from parent cancellation. This ensures
+// cleanup can proceed even if the step's context was cancelled:
+//
+//	flow.WithCleanupTimeout(10*time.Second,
+//	    flow.Scope(workflow),
+//	)
+//
+// See the examples/cleanup/ directory for a complete example.
+//
 // # Naming Best Practices
 //
 // Use [Named] or [AutoNamed] liberally throughout your workflow hierarchy.

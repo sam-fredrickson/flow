@@ -14,6 +14,7 @@ A comprehensive guide to building type-safe workflows with `flow`.
    - [State Transformation with Spawn](#state-transformation-with-spawn)
    - [Logging](#logging)
    - [Workflow-Scoped Values](#workflow-scoped-values)
+   - [Resource Cleanup](#resource-cleanup)
    - [Debugging](#debugging)
    - [Mega-Wrappers: Factoring Out Common Patterns](#mega-wrappers-factoring-out-common-patterns)
    - [Thread Safety in Parallel Execution](#thread-safety-in-parallel-execution)
@@ -908,6 +909,104 @@ WithTags([]string{"db"}, workflow) // only runs db steps
 ```
 
 See `examples/tags/` for a complete runnable example.
+
+### Resource Cleanup
+
+Go's `defer` works at function scope, but flow steps are closures composed via `Do` — there's no natural place to `defer` cleanup for resources acquired mid-pipeline. `Scope` and `Manage` solve this by providing structured, composable resource cleanup.
+
+#### The Scope/Manage Pattern (Primary)
+
+`Manage` pairs an acquire `Step` with a cleanup `Step` and registers the cleanup with the enclosing `Scope`. When the scope exits, all registered cleanups run in LIFO order:
+
+```go
+workflow := flow.Scope(
+    flow.Do(
+        flow.Manage(OpenAndStoreConn, CloseConn),   // 1st acquired, 2nd cleaned
+        flow.Manage(BeginAndStoreTx, RollbackTx),    // 2nd acquired, 1st cleaned
+        DoWork,
+    ),
+)
+```
+
+The acquire step typically stores the resource in state `T`; the cleanup step reads it back. Reusable cleanup steps like `CloseConn` can be shared across workflows. `Manage` returns `ErrNoScope` if no enclosing `Scope` is active.
+
+**Note**: `Manage` requires a pointer type for state (enforced at compile time). The cleanup closure captures the pointer at registration time; a value type would silently operate on a copy, missing mutations made after registration.
+
+For early resource cleanup, use nested scopes — the inner scope's cleanups run when it exits:
+
+```go
+flow.Scope(flow.Do(
+    flow.Scope(flow.Do(
+        flow.Manage(OpenDB, CloseDB),
+        UseDB,
+    )),
+    // DB is already cleaned up here
+    MoreWork,
+))
+```
+
+#### Cleanup Timeouts
+
+By default, cleanup uses the step's context. If the step was cancelled (e.g., timeout), cleanup also gets a cancelled context. Use `WithCleanupTimeout` to give cleanup an independent timeout with a context detached from parent cancellation:
+
+```go
+flow.WithCleanupTimeout(10*time.Second,
+    flow.Scope(
+        flow.Do(
+            flow.Manage(OpenConn, CloseConn),
+            DoWork,
+        ),
+    ),
+)
+```
+
+The timeout is inherited through nested scopes and can be overridden by a closer `WithCleanupTimeout`:
+
+```go
+flow.WithCleanupTimeout(5*time.Second,
+    flow.Scope(flow.Do(
+        // Inner scope overrides to 1s
+        flow.WithCleanupTimeout(1*time.Second,
+            flow.Scope(innerWorkflow),
+        ),
+        outerStep,
+    )),
+)
+```
+
+#### Nested Scopes
+
+Each `Scope` creates an independent cleanup scope. Inner scopes clean up their resources when they exit; outer scopes clean up theirs when they exit:
+
+```go
+flow.Scope(flow.Do(                          // outer scope
+    flow.Manage(OpenConn, CloseConn),
+    flow.Scope(flow.Do(                      // inner scope
+        flow.Manage(BeginTx, RollbackTx),
+        InsertRecords,
+    )),
+    // inner cleanup (RollbackTx) has already run here
+    MoreOuterWork,
+))
+// outer cleanup (CloseConn) runs here
+```
+
+#### Thread Safety with InParallel
+
+`Manage` and `Acquire` are safe to call concurrently from within `InParallel`. The cleanup scope uses a mutex for registration. Registration order (and therefore cleanup order) is non-deterministic with concurrent goroutines, but all cleanups will execute:
+
+```go
+flow.Scope(
+    flow.InParallel(
+        flow.Steps(
+            flow.Manage(OpenConn1, CloseConn),
+            flow.Manage(OpenConn2, CloseConn),
+        ),
+    ),
+)
+```
+
+See `examples/cleanup/` for a complete runnable example.
 
 ### Debugging
 
