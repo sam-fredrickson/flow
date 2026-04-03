@@ -37,10 +37,9 @@ func Names(ctx context.Context) []string {
 //
 // If no flowCtx exists in the context, creates a fresh one with default values.
 func addName(ctx context.Context, name string) (context.Context, []string) {
-	f, _ := ctx.Value(flowCtxKey{}).(*flowCtx)
-	f2 := newFlowCtx(ctx, f)
-	f2.names = append(append([]string{}, f2.names...), name)
-	return f2, f2.names
+	fc := getOrCreateFlowCtx(ctx)
+	fc.names = append(append([]string{}, fc.names...), name)
+	return fc, fc.names
 }
 
 // Named wraps a [Step] with a name.

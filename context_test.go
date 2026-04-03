@@ -294,4 +294,143 @@ func TestFlowCtxSkipOptimization(t *testing.T) {
 	})
 }
 
+func TestWithMaxConcurrency(t *testing.T) {
+	t.Parallel()
+
+	t.Run("CapsGlobalConcurrency", func(t *testing.T) {
+		t.Parallel()
+		items := make([]int64, 20)
+		for i := range items {
+			items[i] = int64(i)
+		}
+
+		var maxConcurrent atomic.Int64
+		var current atomic.Int64
+
+		step := WithMaxConcurrency(2, With(
+			func(_ context.Context, _ *CountingFlow) ([]int64, error) {
+				return items, nil
+			},
+			ApplyParallel(
+				func(_ context.Context, _ *CountingFlow, n int64) error {
+					cur := current.Add(1)
+					for {
+						old := maxConcurrent.Load()
+						if cur <= old || maxConcurrent.CompareAndSwap(old, cur) {
+							break
+						}
+					}
+					time.Sleep(5 * time.Millisecond)
+					current.Add(-1)
+					return nil
+				},
+				ParallelOptions{}, // no per-combinator limit
+			),
+		))
+
+		var c CountingFlow
+		err := step(t.Context(), &c)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if maxConcurrent.Load() > 2 {
+			t.Errorf("max concurrency %d exceeded global cap 2", maxConcurrent.Load())
+		}
+	})
+
+	t.Run("ComposesWithPerCombinatorLimit", func(t *testing.T) {
+		t.Parallel()
+		items := make([]int64, 20)
+		for i := range items {
+			items[i] = int64(i)
+		}
+
+		var maxConcurrent atomic.Int64
+		var current atomic.Int64
+
+		// Per-combinator limit of 10, but global cap of 3
+		step := WithMaxConcurrency(3, With(
+			func(_ context.Context, _ *CountingFlow) ([]int64, error) {
+				return items, nil
+			},
+			ApplyParallel(
+				func(_ context.Context, _ *CountingFlow, n int64) error {
+					cur := current.Add(1)
+					for {
+						old := maxConcurrent.Load()
+						if cur <= old || maxConcurrent.CompareAndSwap(old, cur) {
+							break
+						}
+					}
+					time.Sleep(5 * time.Millisecond)
+					current.Add(-1)
+					return nil
+				},
+				ParallelOptions{Limit: 10},
+			),
+		))
+
+		var c CountingFlow
+		err := step(t.Context(), &c)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if maxConcurrent.Load() > 3 {
+			t.Errorf("max concurrency %d exceeded global cap 3", maxConcurrent.Load())
+		}
+	})
+
+	t.Run("AcrossNestedParallelCombinators", func(t *testing.T) {
+		t.Parallel()
+		items := make([]int64, 10)
+		for i := range items {
+			items[i] = int64(i)
+		}
+
+		var maxConcurrent atomic.Int64
+		var current atomic.Int64
+
+		track := func(_ context.Context, _ *CountingFlow, n int64) error {
+			cur := current.Add(1)
+			for {
+				old := maxConcurrent.Load()
+				if cur <= old || maxConcurrent.CompareAndSwap(old, cur) {
+					break
+				}
+			}
+			time.Sleep(10 * time.Millisecond)
+			current.Add(-1)
+			return nil
+		}
+
+		// Two parallel applies running concurrently via InParallelWith,
+		// both sharing the same global cap of 4.
+		step := WithMaxConcurrency(4, InParallel(
+			Steps(
+				With(
+					func(_ context.Context, _ *CountingFlow) ([]int64, error) {
+						return items, nil
+					},
+					ApplyParallel(track, ParallelOptions{}),
+				),
+				With(
+					func(_ context.Context, _ *CountingFlow) ([]int64, error) {
+						return items, nil
+					},
+					ApplyParallel(track, ParallelOptions{}),
+				),
+			),
+		))
+
+		var c CountingFlow
+		err := step(t.Context(), &c)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if maxConcurrent.Load() > 4 {
+			t.Errorf("max concurrency %d exceeded global cap 4", maxConcurrent.Load())
+		}
+	})
+}
+
 // ==== Test Fixtures ====

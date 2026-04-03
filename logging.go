@@ -54,10 +54,9 @@ func Logger(ctx context.Context) *log.Logger {
 //	        WithLogging(processStep)))
 func WithLogger[T any](logger *log.Logger, step Step[T]) Step[T] {
 	return func(ctx context.Context, t T) error {
-		f, _ := ctx.Value(flowCtxKey{}).(*flowCtx)
-		f2 := newFlowCtx(ctx, f)
-		f2.logger = logger
-		return step(f2, t)
+		fc := getOrCreateFlowCtx(ctx)
+		fc.logger = logger
+		return step(fc, t)
 	}
 }
 
@@ -157,10 +156,9 @@ func Slogger(ctx context.Context) *slog.Logger {
 //	        WithSlogging(slog.LevelInfo, processStep)))
 func WithSlogger[T any](logger *slog.Logger, step Step[T]) Step[T] {
 	return func(ctx context.Context, t T) error {
-		f, _ := ctx.Value(flowCtxKey{}).(*flowCtx)
-		f2 := newFlowCtx(ctx, f)
-		f2.slogger = logger
-		return step(f2, t)
+		fc := getOrCreateFlowCtx(ctx)
+		fc.slogger = logger
+		return step(fc, t)
 	}
 }
 

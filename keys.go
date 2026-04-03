@@ -71,10 +71,9 @@ func (ks *keyStore) get(key any) (any, bool) {
 //	step := flow.WithValue(DryRun, true, myWorkflow)
 func WithValue[T, V any](key Key[V], val V, step Step[T]) Step[T] {
 	return func(ctx context.Context, t T) error {
-		f, _ := ctx.Value(flowCtxKey{}).(*flowCtx)
-		f2 := newFlowCtx(ctx, f)
-		f2.keys.set(key, val)
-		return step(f2, t)
+		fc := getOrCreateFlowCtx(ctx)
+		fc.keys.set(key, val)
+		return step(fc, t)
 	}
 }
 

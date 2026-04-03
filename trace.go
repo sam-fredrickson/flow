@@ -185,11 +185,10 @@ func Traced[T any](step Step[T], opts ...TraceOption) Extract[T, *Trace] {
 			tr.encoder = json.NewEncoder(tr.streamTo)
 		}
 
-		f, _ := ctx.Value(flowCtxKey{}).(*flowCtx)
-		f2 := newFlowCtx(ctx, f)
-		f2.trace = tr
+		fc := getOrCreateFlowCtx(ctx)
+		fc.trace = tr
 
-		ctx = f2
+		ctx = fc
 		func() {
 			defer func() {
 				result.Duration = time.Since(result.Start)

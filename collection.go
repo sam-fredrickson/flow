@@ -213,6 +213,43 @@ func Render[T, In, Out any](f Transform[T, In, Out]) Transform[T, []In, []Out] {
 	}
 }
 
+// RenderParallel transforms each element in a slice concurrently, preserving
+// input order in the output.
+//
+// This is the parallel counterpart of [Render]. Each element is processed in
+// its own goroutine, and the results are collected into a slice that matches
+// the input ordering. Per-element errors are wrapped with [IndexedError].
+//
+// Example:
+//
+//	flow.Pipeline(
+//	    GetUserIDs,
+//	    RenderParallel(LoadUser, ParallelOptions{Limit: 10}),
+//	    Apply(SaveUser),
+//	)
+func RenderParallel[T, In, Out any](
+	f Transform[T, In, Out],
+	opts ParallelOptions,
+) Transform[T, []In, []Out] {
+	return func(ctx context.Context, t T, items []In) ([]Out, error) {
+		results := make([]Out, len(items))
+
+		err := parallelDo(ctx, len(items), opts, func(ctx context.Context, i int) error {
+			out, err := f(ctx, t, items[i])
+			if err != nil {
+				return &IndexedError{Index: i, Err: err}
+			}
+			results[i] = out
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return results, nil
+	}
+}
+
 // Apply consumes each element in a slice (serial, fail-fast).
 //
 // This enables clean serial iteration without orchestrator wrappers. It's
@@ -254,6 +291,31 @@ func Apply[T, U any](f Consume[T, U]) Consume[T, []U] {
 			}
 		}
 		return nil
+	}
+}
+
+// ApplyParallel consumes each element in a slice concurrently.
+//
+// This is the parallel counterpart of [Apply]. Each element is processed in
+// its own goroutine. Per-element errors are wrapped with [IndexedError].
+//
+// Example:
+//
+//	flow.With(
+//	    GetUsers,
+//	    ApplyParallel(SendNotification, ParallelOptions{Limit: 5}),
+//	)
+func ApplyParallel[T, U any](
+	f Consume[T, U],
+	opts ParallelOptions,
+) Consume[T, []U] {
+	return func(ctx context.Context, t T, items []U) error {
+		return parallelDo(ctx, len(items), opts, func(ctx context.Context, i int) error {
+			if err := f(ctx, t, items[i]); err != nil {
+				return &IndexedError{Index: i, Err: err}
+			}
+			return nil
+		})
 	}
 }
 

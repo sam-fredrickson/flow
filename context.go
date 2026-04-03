@@ -7,6 +7,8 @@ import (
 	"log"
 	"log/slog"
 	"time"
+
+	"golang.org/x/sync/semaphore"
 )
 
 // flowCtxKey is the context key for retrieving the flowCtx.
@@ -53,6 +55,10 @@ type flowCtx struct {
 	// cleanupTimeout is the timeout for cleanup operations within a Scope.
 	// Zero means no cleanup timeout (cleanup uses the step's context as-is).
 	cleanupTimeout time.Duration
+
+	// sem is the global concurrency semaphore installed by WithMaxConcurrency.
+	// nil means no global concurrency cap is active.
+	sem *semaphore.Weighted
 }
 
 // Value implements context.Context.Value by intercepting flowCtxKey lookups
@@ -106,6 +112,7 @@ func newFlowCtx(parent context.Context, origin *flowCtx) *flowCtx {
 		keys:           origin.keys,
 		scope:          origin.scope,
 		cleanupTimeout: origin.cleanupTimeout,
+		sem:            origin.sem,
 	}
 	return f
 }
@@ -173,4 +180,48 @@ func Sleep[T any](duration time.Duration) Step[T] {
 			return ctx.Err()
 		}
 	}
+}
+
+// getSemaphore returns the global concurrency semaphore from the context,
+// or nil if no WithMaxConcurrency is active.
+func getSemaphore(ctx context.Context) *semaphore.Weighted {
+	fc, ok := ctx.Value(flowCtxKey{}).(*flowCtx)
+	if !ok {
+		return nil
+	}
+	return fc.sem
+}
+
+// WithMaxConcurrency wraps a step with a global concurrency cap.
+//
+// The limit controls the maximum number of goroutines that may execute
+// concurrently within any parallel combinator ([RenderParallel],
+// [ApplyParallel], [InParallelWith]) nested inside the step. Each
+// WithMaxConcurrency installs an independent semaphore; nested calls
+// do not inherit or share the parent's cap.
+//
+// This composes with per-combinator [ParallelOptions.Limit]: the combinator
+// limit controls goroutine count while the global cap controls actual
+// execution concurrency.
+//
+// Example:
+//
+//	// At most 10 goroutines actively running across all parallel work
+//	flow.WithMaxConcurrency(10, flow.Do(
+//	    flow.With(GetBatch1, ApplyParallel(Process, ParallelOptions{Limit: 20})),
+//	    flow.With(GetBatch2, ApplyParallel(Process, ParallelOptions{Limit: 20})),
+//	))
+func WithMaxConcurrency[T any](limit int, step Step[T]) Step[T] {
+	return func(ctx context.Context, t T) error {
+		fc := getOrCreateFlowCtx(ctx)
+		fc.sem = semaphore.NewWeighted(int64(limit))
+		return step(fc, t)
+	}
+}
+
+// getOrCreateFlowCtx retrieves the existing flowCtx from the context chain,
+// or creates a new one if none exists, and returns a fresh copy in either case.
+func getOrCreateFlowCtx(ctx context.Context) *flowCtx {
+	origin, _ := ctx.Value(flowCtxKey{}).(*flowCtx)
+	return newFlowCtx(ctx, origin)
 }

@@ -6,7 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestFromMap(t *testing.T) {
@@ -437,6 +440,198 @@ func TestFlatten(t *testing.T) {
 	}
 }
 
+func TestRenderParallel(t *testing.T) {
+	t.Parallel()
+
+	t.Run("PreservesOrder", func(t *testing.T) {
+		t.Parallel()
+		items := []int64{10, 20, 30, 40, 50}
+
+		transform := RenderParallel(
+			func(_ context.Context, _ *CountingFlow, n int64) (int64, error) {
+				return n * 2, nil
+			},
+			ParallelOptions{},
+		)
+
+		results, err := transform(t.Context(), &CountingFlow{}, items)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		expected := []int64{20, 40, 60, 80, 100}
+		for i, got := range results {
+			if got != expected[i] {
+				t.Errorf("results[%d] = %d, want %d", i, got, expected[i])
+			}
+		}
+	})
+
+	t.Run("IndexedErrorOnFailure", func(t *testing.T) {
+		t.Parallel()
+		items := []int64{1, 2, 3, 4, 5}
+
+		transform := RenderParallel(
+			func(_ context.Context, _ *CountingFlow, n int64) (int64, error) {
+				if n == 3 {
+					return 0, error1
+				}
+				return n, nil
+			},
+			ParallelOptions{Limit: 1}, // serialize to ensure deterministic failure
+		)
+
+		_, err := transform(t.Context(), &CountingFlow{}, items)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		var ie *IndexedError
+		if !errors.As(err, &ie) {
+			t.Fatalf("expected IndexedError, got %T: %v", err, err)
+		}
+		if ie.Index != 2 {
+			t.Errorf("expected index 2, got %d", ie.Index)
+		}
+		if !errors.Is(err, error1) {
+			t.Errorf("expected wrapped error to match error1")
+		}
+	})
+
+	t.Run("ContextCancellationStopsScheduling", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel() // cancel immediately
+
+		items := []int64{1, 2, 3}
+		var count atomic.Int64
+
+		transform := RenderParallel(
+			func(_ context.Context, _ *CountingFlow, n int64) (int64, error) {
+				count.Add(1)
+				return n, nil
+			},
+			ParallelOptions{},
+		)
+
+		_, err := transform(ctx, &CountingFlow{}, items)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context.Canceled, got %v", err)
+		}
+	})
+
+	t.Run("JoinErrorsCollectsAll", func(t *testing.T) {
+		t.Parallel()
+		items := []int64{1, 2, 3, 4, 5}
+
+		transform := RenderParallel(
+			func(_ context.Context, _ *CountingFlow, n int64) (int64, error) {
+				if n%2 == 0 {
+					return 0, fmt.Errorf("fail-%d", n)
+				}
+				return n, nil
+			},
+			ParallelOptions{JoinErrors: true},
+		)
+
+		_, err := transform(t.Context(), &CountingFlow{}, items)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		// Should contain errors for elements 2 and 4
+		var ie2, ie4 *IndexedError
+		for _, wrapped := range []error{err} {
+			for _, inner := range unwrapAll(wrapped) {
+				var ie *IndexedError
+				if errors.As(inner, &ie) {
+					switch ie.Index {
+					case 1:
+						ie2 = ie
+					case 3:
+						ie4 = ie
+					}
+				}
+			}
+		}
+		if ie2 == nil {
+			t.Error("expected IndexedError for index 1 (element 2)")
+		}
+		if ie4 == nil {
+			t.Error("expected IndexedError for index 3 (element 4)")
+		}
+	})
+
+	t.Run("LimitBoundsConcurrency", func(t *testing.T) {
+		t.Parallel()
+		items := make([]int64, 20)
+		for i := range items {
+			items[i] = int64(i)
+		}
+
+		var maxConcurrent atomic.Int64
+		var current atomic.Int64
+
+		transform := RenderParallel(
+			func(_ context.Context, _ *CountingFlow, n int64) (int64, error) {
+				cur := current.Add(1)
+				// Track max
+				for {
+					old := maxConcurrent.Load()
+					if cur <= old || maxConcurrent.CompareAndSwap(old, cur) {
+						break
+					}
+				}
+				time.Sleep(5 * time.Millisecond)
+				current.Add(-1)
+				return n, nil
+			},
+			ParallelOptions{Limit: 3},
+		)
+
+		results, err := transform(t.Context(), &CountingFlow{}, items)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(results) != len(items) {
+			t.Errorf("expected %d results, got %d", len(items), len(results))
+		}
+		if maxConcurrent.Load() > 3 {
+			t.Errorf("max concurrency %d exceeded limit 3", maxConcurrent.Load())
+		}
+	})
+
+	t.Run("EmptySlice", func(t *testing.T) {
+		t.Parallel()
+		transform := RenderParallel(
+			func(_ context.Context, _ *CountingFlow, n int64) (int64, error) {
+				t.Fatal("should not be called")
+				return 0, nil
+			},
+			ParallelOptions{},
+		)
+
+		results, err := transform(t.Context(), &CountingFlow{}, []int64{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(results) != 0 {
+			t.Errorf("expected empty results, got %d", len(results))
+		}
+	})
+}
+
+// unwrapAll returns all individual errors from a joined error.
+func unwrapAll(err error) []error {
+	type joinedError interface {
+		Unwrap() []error
+	}
+	if je, ok := err.(joinedError); ok {
+		return je.Unwrap()
+	}
+	return []error{err}
+}
+
 func TestRenderIndexedError(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
@@ -508,6 +703,158 @@ func TestRenderIndexedError(t *testing.T) {
 	}
 }
 
+func TestApplyParallel(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Success", func(t *testing.T) {
+		t.Parallel()
+		items := []int64{1, 2, 3, 4, 5}
+		var sum atomic.Int64
+
+		consume := ApplyParallel(
+			func(_ context.Context, _ *CountingFlow, n int64) error {
+				sum.Add(n)
+				return nil
+			},
+			ParallelOptions{},
+		)
+
+		err := consume(t.Context(), &CountingFlow{}, items)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if sum.Load() != 15 {
+			t.Errorf("expected sum 15, got %d", sum.Load())
+		}
+	})
+
+	t.Run("IndexedErrorOnFailure", func(t *testing.T) {
+		t.Parallel()
+		items := []int64{10, 20, 30}
+
+		consume := ApplyParallel(
+			func(_ context.Context, _ *CountingFlow, n int64) error {
+				if n == 20 {
+					return error2
+				}
+				return nil
+			},
+			ParallelOptions{Limit: 1},
+		)
+
+		err := consume(t.Context(), &CountingFlow{}, items)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		var ie *IndexedError
+		if !errors.As(err, &ie) {
+			t.Fatalf("expected IndexedError, got %T: %v", err, err)
+		}
+		if ie.Index != 1 {
+			t.Errorf("expected index 1, got %d", ie.Index)
+		}
+		if !errors.Is(err, error2) {
+			t.Errorf("expected wrapped error to match error2")
+		}
+	})
+
+	t.Run("ContextCancellationStopsScheduling", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		items := []int64{1, 2, 3}
+		consume := ApplyParallel(
+			func(_ context.Context, _ *CountingFlow, n int64) error {
+				return nil
+			},
+			ParallelOptions{},
+		)
+
+		err := consume(ctx, &CountingFlow{}, items)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context.Canceled, got %v", err)
+		}
+	})
+
+	t.Run("JoinErrorsCollectsAll", func(t *testing.T) {
+		t.Parallel()
+		items := []int64{1, 2, 3}
+
+		consume := ApplyParallel(
+			func(_ context.Context, _ *CountingFlow, n int64) error {
+				return fmt.Errorf("fail-%d", n)
+			},
+			ParallelOptions{JoinErrors: true},
+		)
+
+		err := consume(t.Context(), &CountingFlow{}, items)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		// All three should have produced IndexedErrors
+		errStr := err.Error()
+		for _, needle := range []string{"element 0", "element 1", "element 2"} {
+			if !strings.Contains(errStr, needle) {
+				t.Errorf("expected error to contain %q, got %q", needle, errStr)
+			}
+		}
+	})
+
+	t.Run("LimitBoundsConcurrency", func(t *testing.T) {
+		t.Parallel()
+		items := make([]int64, 20)
+		for i := range items {
+			items[i] = int64(i)
+		}
+
+		var maxConcurrent atomic.Int64
+		var current atomic.Int64
+
+		consume := ApplyParallel(
+			func(_ context.Context, _ *CountingFlow, n int64) error {
+				cur := current.Add(1)
+				for {
+					old := maxConcurrent.Load()
+					if cur <= old || maxConcurrent.CompareAndSwap(old, cur) {
+						break
+					}
+				}
+				time.Sleep(5 * time.Millisecond)
+				current.Add(-1)
+				return nil
+			},
+			ParallelOptions{Limit: 3},
+		)
+
+		err := consume(t.Context(), &CountingFlow{}, items)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if maxConcurrent.Load() > 3 {
+			t.Errorf("max concurrency %d exceeded limit 3", maxConcurrent.Load())
+		}
+	})
+
+	t.Run("EmptySlice", func(t *testing.T) {
+		t.Parallel()
+		consume := ApplyParallel(
+			func(_ context.Context, _ *CountingFlow, n int64) error {
+				t.Fatal("should not be called")
+				return nil
+			},
+			ParallelOptions{},
+		)
+
+		err := consume(t.Context(), &CountingFlow{}, []int64{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
 func TestApplyIndexedError(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {

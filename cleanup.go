@@ -111,17 +111,16 @@ func Scope[T any](step Step[T]) Step[T] {
 			return err
 		}
 
-		f, _ := ctx.Value(flowCtxKey{}).(*flowCtx)
-		f2 := newFlowCtx(ctx, f)
+		fc := getOrCreateFlowCtx(ctx)
 		scope := &cleanupScope{}
-		f2.scope = scope
+		fc.scope = scope
 
 		defer func() {
-			cleanupCtx := context.Context(f2)
-			if f2.cleanupTimeout > 0 {
-				detached := context.WithoutCancel(f2)
+			cleanupCtx := context.Context(fc)
+			if fc.cleanupTimeout > 0 {
+				detached := context.WithoutCancel(fc)
 				var cancel context.CancelFunc
-				cleanupCtx, cancel = context.WithTimeout(detached, f2.cleanupTimeout)
+				cleanupCtx, cancel = context.WithTimeout(detached, fc.cleanupTimeout)
 				defer cancel()
 			}
 
@@ -129,7 +128,7 @@ func Scope[T any](step Step[T]) Step[T] {
 			returnErr = errors.Join(returnErr, cleanupErr)
 		}()
 
-		return step(f2, t)
+		return step(fc, t)
 	}
 }
 
@@ -145,9 +144,8 @@ func Scope[T any](step Step[T]) Step[T] {
 // closer WithCleanupTimeout call.
 func WithCleanupTimeout[T any](timeout time.Duration, step Step[T]) Step[T] {
 	return func(ctx context.Context, t T) error {
-		f, _ := ctx.Value(flowCtxKey{}).(*flowCtx)
-		f2 := newFlowCtx(ctx, f)
-		f2.cleanupTimeout = timeout
-		return step(f2, t)
+		fc := getOrCreateFlowCtx(ctx)
+		fc.cleanupTimeout = timeout
+		return step(fc, t)
 	}
 }

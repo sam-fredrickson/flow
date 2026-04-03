@@ -5,8 +5,6 @@ package flow
 import (
 	"context"
 	"errors"
-
-	"golang.org/x/sync/errgroup"
 )
 
 // StepsProvider provides a sequence of steps.
@@ -192,59 +190,9 @@ func InParallelWith[T any](
 			allSteps = append(allSteps, steps...)
 		}
 
-		// set up group
-		group, subCtx := errgroup.WithContext(ctx)
-		if opts.Limit > 0 {
-			group.SetLimit(opts.Limit)
-		}
-
-		// handle error joining if enabled
-		var errs chan error
-		var joinedErr chan error
-		if opts.JoinErrors {
-			errs = make(chan error)
-			joinedErr = make(chan error)
-			go func() {
-				var stepErrs []error
-				for err := range errs {
-					if err == nil {
-						continue
-					}
-					stepErrs = append(stepErrs, err)
-				}
-				joinedErr <- errors.Join(stepErrs...)
-			}()
-		}
-
-		// run steps
-		for _, step := range allSteps {
-			if err := ctx.Err(); err != nil {
-				break
-			}
-			group.Go(func() error {
-				if err := subCtx.Err(); err != nil {
-					if opts.JoinErrors {
-						errs <- err
-						return nil
-					}
-					return err
-				}
-				err := step(subCtx, t)
-				if opts.JoinErrors {
-					errs <- err
-					return nil
-				}
-				return err
-			})
-		}
-
-		// wait for any error(s)
-		err := group.Wait()
-		if opts.JoinErrors {
-			close(errs)
-			err = <-joinedErr
-		}
-		return err
+		return parallelDo(ctx, len(allSteps), opts, func(ctx context.Context, i int) error {
+			return allSteps[i](ctx, t)
+		})
 	}
 }
 
