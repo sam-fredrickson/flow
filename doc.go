@@ -249,7 +249,6 @@
 //
 // For more information, see:
 //   - Usage guide: https://github.com/sam-fredrickson/flow/tree/main/docs/guide.md
-//   - Pattern comparisons: https://github.com/sam-fredrickson/flow/tree/main/docs/patterns.md
 //   - Design philosophy: https://github.com/sam-fredrickson/flow/tree/main/docs/design.md
 //   - Runnable examples: https://github.com/sam-fredrickson/flow/tree/main/examples
 //
