@@ -64,18 +64,18 @@ type EnrichedRecord struct {
 // ProcessAllData demonstrates the full pipeline:
 // Collect pages → Extract records → Validate → Enrich → Save.
 func ProcessAllData() flow.Step[*State] {
-	return flow.With(
-		flow.From(
-			flow.Collect(FetchNextPage), // Collect all pages from API
-			flow.Chain4(
-				flow.Render(ExtractRecords), // Extract records from each page: []Page → [][]Record
-				flow.Flatten,                // Flatten: [][]Record → []Record
-				flow.Render(ValidateRecord), // Validate each: []Record → []ValidatedRecord
-				flow.Render(EnrichRecord),   // Enrich each: []ValidatedRecord → []EnrichedRecord
-			),
-		),
-		flow.Apply(SaveRecord), // Save each enriched record
-	)
+	// Collect all pages from the API, then:
+	//   extract records from each page ([]Page → [][]Record),
+	//   flatten ([][]Record → []Record),
+	//   validate each ([]Record → []ValidatedRecord),
+	//   enrich each ([]ValidatedRecord → []EnrichedRecord),
+	//   and save each enriched record.
+	return flow.Collect(FetchNextPage).
+		Via(flow.Render(ExtractRecords)).
+		Via(flow.Flatten).
+		Via(flow.Render(ValidateRecord)).
+		Via(flow.Render(EnrichRecord)).
+		To(flow.Apply(SaveRecord))
 }
 
 // =============================================================================
@@ -84,10 +84,9 @@ func ProcessAllData() flow.Step[*State] {
 
 // ProcessQueue demonstrates a simpler pattern: pull items from queue and process.
 func ProcessQueue() flow.Step[*State] {
-	return flow.With(
-		flow.Collect(PopNextItem),    // Pull items until queue is empty
-		flow.Apply(ProcessQueueItem), // Process each item
-	)
+	// Pull items until the queue is empty, processing each one.
+	return flow.Collect(PopNextItem).
+		To(flow.Apply(ProcessQueueItem))
 }
 
 // =============================================================================
@@ -96,14 +95,12 @@ func ProcessQueue() flow.Step[*State] {
 
 // TransformBatch demonstrates batch transformation without collection.
 func TransformBatch() flow.Step[*State] {
-	return flow.Pipeline(
-		GetCachedRecords, // Extract[*State, []RawRecord]
-		flow.Chain(
-			flow.Render(ValidateRecord), // Transform each: RawRecord → ValidatedRecord
-			flow.Render(EnrichRecord),   // Transform each: ValidatedRecord → EnrichedRecord
-		),
-		flow.Apply(SaveRecord), // Save each
-	)
+	// GetCachedRecords is declared as a plain function, so it must be
+	// converted to flow.Extract before methods can be called on it.
+	return flow.Extract[*State, []RawRecord](GetCachedRecords).
+		Via(flow.Render(ValidateRecord)). // Transform each: RawRecord → ValidatedRecord
+		Via(flow.Render(EnrichRecord)).   // Transform each: ValidatedRecord → EnrichedRecord
+		To(flow.Apply(SaveRecord))        // Save each
 }
 
 // =============================================================================

@@ -67,7 +67,7 @@ func TestWithValueAndLookup(t *testing.T) {
 	t.Run("NoFlowCtxReturnsFalse", func(t *testing.T) {
 		t.Parallel()
 		key := NewKey[string]("no-ctx")
-		val, ok := Lookup(context.Background(), key)
+		val, ok := Lookup(t.Context(), key)
 		if ok {
 			t.Error("expected ok=false with no flowCtx")
 		}

@@ -30,10 +30,7 @@ func (setup *EnvironmentSetup) Run(ctx context.Context) error {
 }
 
 func SetupEnvironment() flow.Step[*EnvironmentSetup] {
-	return flow.Do(
-		Phase1(),
-		Phase2(),
-	)
+	return Phase1().Then(Phase2())
 }
 
 func Phase1() flow.Step[*EnvironmentSetup] {
@@ -129,10 +126,8 @@ func GatherDbSetup(ctx context.Context, setup *EnvironmentSetup) ([]DbInstanceSe
 }
 
 func RunDbSetup(instance DbInstanceSetup) flow.Step[*EnvironmentSetup] {
-	return flow.Spawn(
-		PrepareDbSetup(instance),
-		flow.InParallel(flow.Steps(instance.Steps...)),
-	)
+	return PrepareDbSetup(instance).
+		Spawn(flow.InParallel(flow.Steps(instance.Steps...)))
 }
 
 func PrepareDbSetup(instance DbInstanceSetup) flow.Extract[*EnvironmentSetup, *ServiceDbSetup] {

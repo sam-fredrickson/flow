@@ -14,7 +14,7 @@ import (
 // T is some kind of state upon which the check operates.
 //
 // If using parallel steps, ensure that access to T is thread-safe.
-type Predicate[T any] = func(context.Context, T) (bool, error)
+type Predicate[T any] func(context.Context, T) (bool, error)
 
 // When runs the given step only if the predicate returns true.
 //

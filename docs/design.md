@@ -58,6 +58,24 @@ Steps are just functions with the signature `func(context.Context, T) error`. Th
 
 The library provides combinators (`Do`, `InParallel`, `Retry`, `When`, etc.) that handle the mechanics of execution, error handling, and concurrency, letting you focus on *what* should happen rather than *how* to orchestrate it.
 
+### Two Styles, One Algebra
+
+Every combinator exists in two interchangeable forms: a package-level function and a method on the core types (`Step`, `Extract`, `Transform`, `Consume`, `Predicate`, `Key`). The methods delegate to the functions — there is one composition algebra, expressed two ways.
+
+The method form exists because some compositions read better left-to-right in data-flow order:
+
+```go
+// Inside-out nesting obscures the data flow...
+flow.With(flow.From(GetConfig, Parse), Save)
+
+// ...which the fluent form makes linear.
+GetConfig.Via(Parse).To(Save)
+```
+
+Methods that introduce a new type parameter — `Via` and `Then` change the pipeline's value type — are generic methods, which is why the library requires Go 1.27.
+
+The conventions the examples follow: `flow.Do(...)` for sequences of three or more steps; `.Then` for a step with a single follow-up; trailing methods for decorators (`.Retry`, `.When`, `.Named`, `.Scoped`); and the fluent form throughout data pipelines. Function style remains the natural fit at the leaves, where plain functions and closures (which have no method sets) enter the composition as arguments.
+
 ### Type Safety
 
 Generics ensure type safety throughout your workflows. The compiler catches type mismatches at compile time.
@@ -116,9 +134,9 @@ This makes workflows both safer and more self-documenting. When you see `Spawn`,
 
 ### No Lock-In
 
-Because `Step[T]` is just a type alias for a function signature, there's no dependency on special interfaces, base classes, or framework infrastructure. This has important implications:
+Because `Step[T]` is a defined function type — not an interface, base class, or framework abstraction — there's no dependency on special infrastructure. Go's assignability rules mean any function with the right signature just *is* a step. This has important implications:
 
-**Steps are ordinary functions**: You can write a step without importing the library. Any function with signature `func(context.Context, T) error` is already a valid step.
+**Steps are ordinary functions**: You can write a step without importing the library. Any function with signature `func(context.Context, T) error` is directly assignable to `Step[T]` — no wrapping, no adapter.
 
 **No runtime coupling**: There's no global registry, no background goroutines, no hidden state. The library provides pure functions that compose other functions.
 

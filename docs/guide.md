@@ -32,6 +32,23 @@ The `flow` library provides three key abstractions:
 - **Composition** - Combine steps using `Do`, `InParallel`, `Retry`, `When`, etc.
 - **Type safety** - Steps must operate on the same state type
 
+Composition comes in two interchangeable styles:
+
+- **Function style**: package-level combinators like `flow.Do(a, b)`,
+  `flow.Retry(step)`, `flow.Pipeline(extract, transform, consume)`
+- **Fluent style**: the same combinators as methods, reading left-to-right:
+  `a.Then(b)`, `step.Retry()`, `extract.Via(transform).To(consume)`
+
+Both produce identical results — every method delegates to its package-level
+counterpart. The conventions used throughout this guide:
+
+- `flow.Do(...)` for sequences of three or more steps; `.Then` for a step
+  with one follow-up
+- Trailing methods for decorators: `.Retry(...)`, `.When(...)`,
+  `.IgnoreError()`, `.Named("x")`, `.Scoped()`
+- `.Via`/`.Then`/`.To` for data pipelines, where the fluent style shines
+  most (see [Functional Composition](#functional-composition))
+
 ### Step Constructors: The Recommended Pattern
 
 Use step constructors by default, even for steps without parameters:
@@ -82,7 +99,7 @@ func CreateDatabase(name string) flow.Step[*Config] {
 
 ### Incremental Adoption
 
-Since `Step[T]` is just a function type (`func(context.Context, T) error`), there's no lock-in or runtime magic:
+Since `Step[T]` is a function type (`func(context.Context, T) error`) — any function or closure with that signature is directly assignable to it — there's no lock-in or runtime magic:
 
 - **Use it for specific problems**: Add `flow.Retry()` around one flaky API call without changing anything else
 - **Mix with existing code**: Flow steps are just functions—call them from anywhere, call anything from them
@@ -153,16 +170,19 @@ flow.InParallelWith(
 ```go
 flow.Do(
     ValidateConfig(),
-    flow.When(
-        IsProduction(),
-        EnableMonitoring(),
-    ),
-    flow.Unless(
-        IsDevelopment(),
-        RequireAuthentication(),
-    ),
+    EnableMonitoring().When(IsProduction()),
+    RequireAuthentication().Unless(IsDevelopment()),
     StartServer(),
 )
+```
+
+The method forms `step.When(pred)` and `step.Unless(pred)` read "do this,
+under this condition"; the function forms `flow.When(pred, step)` put the
+condition first. Use whichever reads better in context. Predicates also
+compose with `.And`, `.Or`, and `.Not`:
+
+```go
+EnableMonitoring().When(IsProduction().And(IsHealthy()))
 ```
 
 Predicates can fail and have access to your state:
@@ -204,6 +224,15 @@ Default behavior (3 retries with exponential backoff):
 flow.Retry(CallExternalAPI())
 ```
 
+Or as a trailing method on the step:
+
+```go
+CallExternalAPI().Retry(
+    flow.OnlyIf(isTransientError),
+    flow.UpTo(5),
+)
+```
+
 ### Error Handling
 
 The library provides composable error handling patterns:
@@ -211,9 +240,9 @@ The library provides composable error handling patterns:
 **Ignore errors for best-effort operations:**
 
 ```go
-flow.IgnoreError(
-    SendMetrics(),
-)
+flow.IgnoreError(SendMetrics())
+// or
+SendMetrics().IgnoreError()
 ```
 
 **Recover from panics:**
@@ -241,10 +270,7 @@ flow.OnError(
 Or use the simpler `FallbackTo` helper:
 
 ```go
-flow.OnError(
-    CallPrimaryAPI(),
-    flow.FallbackTo(CallBackupAPI()),
-)
+CallPrimaryAPI().OnError(flow.FallbackTo(CallBackupAPI()))
 ```
 
 ---
@@ -254,9 +280,9 @@ flow.OnError(
 Sometimes you need to pass data between steps rather than storing everything in shared state. The library provides three types for building functional pipelines:
 
 ```go
-type Extract[T, U any] = func(context.Context, T) (U, error)
-type Transform[T, In, Out any] = func(context.Context, T, In) (Out, error)
-type Consume[T, U any] = func(context.Context, T, U) error
+type Extract[T, U any] func(context.Context, T) (U, error)
+type Transform[T, In, Out any] func(context.Context, T, In) (Out, error)
+type Consume[T, U any] func(context.Context, T, U) error
 ```
 
 - **Extract[T, U]** reads a value of type `U` from state `T`
@@ -308,7 +334,52 @@ transform := flow.Chain(
 )                           // → Transform[*State, string, EnrichedData]
 ```
 
-Variants `Chain3` and `Chain4` are available for longer transformation chains.
+For longer transformation chains, use the `Then` method, which chains to any
+length: `parseJSON.Then(enrichData).Then(normalize)`.
+
+### Fluent Pipelines
+
+Each composition pattern above has a method form, and this is where the
+fluent style pays off most: pipelines read left-to-right in data-flow order
+instead of inside-out.
+
+| Function form | Method form |
+|---------------|-------------|
+| `From(e, t)` | `e.Via(t)` |
+| `Chain(t1, t2)` | `t1.Then(t2)` |
+| `Feed(t, c)` | `t.To(c)` |
+| `With(e, c)` | `e.To(c)` |
+| `Pipeline(e, t, c)` | `e.Via(t).To(c)` |
+| `Spawn(e, s)` | `e.Spawn(s)` |
+
+The methods that change the value type (`Via`, `Then`) are generic methods,
+so multi-stage pipelines stay fully type-inferred:
+
+```go
+// Function style: reads inside-out
+flow.Pipeline(
+    GetRawConfig,
+    flow.Chain(Parse, Validate),
+    Save,
+)
+
+// Fluent style: reads in data-flow order
+GetRawConfig.Via(Parse).Via(Validate).To(Save)
+```
+
+**Starting a chain**: values returned by flow combinators and step
+constructors already have the defined types, so methods chain directly. A
+plain declared function (`func GetRawConfig(ctx, *State) (Config, error)`)
+has no method set, so to *start* a chain from one, convert it first:
+
+```go
+flow.Extract[*State, Config](GetRawConfig).Via(Parse).To(Save)
+```
+
+In argument position no conversion is needed — plain functions are
+assignable wherever an `Extract`/`Transform`/`Consume` parameter is
+expected. In practice, chains almost always start from a combinator result
+(`flow.Collect(...)`, a constructor call), so the conversion rarely comes up.
 
 ---
 
@@ -353,7 +424,7 @@ flow.Pipeline(
 func Render[T, In, Out any](f Transform[T, In, Out]) Transform[T, []In, []Out]
 ```
 
-Example - multi-stage transformation:
+Example - multi-stage transformation, in both styles:
 
 ```go
 flow.Pipeline(
@@ -365,7 +436,20 @@ flow.Pipeline(
     ),
     Apply(SaveRecord),          // Save each enriched record
 )
+
+// Fluent equivalent (GetRawRecords must have the Extract type,
+// e.g. a combinator result or converted plain function):
+GetRawRecords.
+    Via(Render(ParseJSON)).
+    Via(Render(ValidateRecord)).
+    Via(Render(EnrichRecord)).
+    To(Apply(SaveRecord))
 ```
+
+Note that `Render` and `Apply` themselves stay package-level functions: a
+method whose signature mentions its receiver type at derived type arguments
+(`Transform[T, []In, []Out]` from within `Transform[T, In, Out]`) would
+trigger an infinite instantiation cycle, which the compiler rejects.
 
 #### Apply - Consume Each Element
 
@@ -492,24 +576,16 @@ var ProvisionDatabase = flow.Do(
     )),
 
     // Conditional replication setup
-    flow.When(
-        IsReplica(),
-        flow.Do(
-            CreateUser("replicator"),
-            SetBinlogRetention(72),
-            GrantReplicationPrivileges("replicator"),
-        ),
-    ),
+    flow.Do(
+        CreateUser("replicator"),
+        SetBinlogRetention(72),
+        GrantReplicationPrivileges("replicator"),
+    ).When(IsReplica()),
 
     // Retry-wrapped admin user creation
-    flow.Retry(
-        flow.Do(
-            CreateUser("admin"),
-            GrantAllPrivileges("admin"),
-        ),
-        flow.UpTo(3),
-        flow.ExponentialBackoff(100*time.Millisecond),
-    ),
+    CreateUser("admin").
+        Then(GrantAllPrivileges("admin")).
+        Retry(flow.UpTo(3), flow.ExponentialBackoff(100*time.Millisecond)),
 
     ValidateConfiguration(),
 )
@@ -717,16 +793,17 @@ func CreateSchema() flow.Step[*DatabaseSetup] {
 // Use Spawn to run database steps within environment workflow
 flow.Do(
     ValidateEnvironment(),
-    flow.Spawn(
-        OpenDatabase("main"),
-        flow.Do(
-            CreateSchema(),
-            CreateTables(),
-        ),
-    ),
+    OpenDatabase("main").Spawn(flow.Do(
+        CreateSchema(),
+        CreateTables(),
+    )),
     DeployServices(),
 )
 ```
+
+The method form `derive.Spawn(step)` reads "derive the child state, then run
+this step with it". The function form `flow.Spawn(derive, step)` is
+equivalent.
 
 The database setup steps only see `*DatabaseSetup` with a properly-typed connection, while the main workflow continues to work with `*Environment`.
 
@@ -837,16 +914,17 @@ Flow provides a typed key-value store scoped to the entire workflow. This is use
 
 #### API
 
-Create a key with `NewKey`, set it with `WithValue`, and read it with `Lookup`:
+Create a key with `NewKey`, set it with the key's `Set` method, and read it
+with `Get`:
 
 ```go
 // Package-level key declaration (each NewKey call produces a unique key)
 var DryRun = flow.NewKey[bool]("dry-run")
 
 // Set the value at the workflow root
-step := flow.WithValue(DryRun, true,
+step := DryRun.Set(true,
     flow.Named("deploy", func(ctx context.Context, s *State) error {
-        if dry, ok := flow.Lookup(ctx, DryRun); ok && dry {
+        if dry, ok := DryRun.Get(ctx); ok && dry {
             log.Println("dry-run: skipping deploy")
             return nil
         }
@@ -854,6 +932,9 @@ step := flow.WithValue(DryRun, true,
     }),
 )
 ```
+
+The package-level forms `flow.WithValue(key, val, step)` and
+`flow.Lookup(ctx, key)` are equivalent.
 
 Key properties:
 - **Unique identity**: Two calls to `NewKey[string]("env")` produce distinct keys. Names are for debugging only.
@@ -868,11 +949,11 @@ Values propagate across `Spawn` boundaries because the key store is shared:
 ```go
 var Region = flow.NewKey[string]("region")
 
-workflow := flow.WithValue(Region, "us-west-2",
+workflow := Region.Set("us-west-2",
     flow.Spawn(
         DeriveChildState,  // Extract[*Parent, *Child]
         func(ctx context.Context, child *Child) error {
-            region, _ := flow.Lookup(ctx, Region) // "us-west-2"
+            region, _ := Region.Get(ctx) // "us-west-2"
             return deployTo(ctx, child, region)
         },
     ),
@@ -887,12 +968,12 @@ A common pattern is using workflow-scoped values to implement tags that control 
 var ActiveTags = flow.NewKey[[]string]("active-tags")
 
 func WithTags[T any](tags []string, step flow.Step[T]) flow.Step[T] {
-    return flow.WithValue(ActiveTags, tags, step)
+    return ActiveTags.Set(tags, step)
 }
 
 func Tagged[T any](tag string, step flow.Step[T]) flow.Step[T] {
     return func(ctx context.Context, t T) error {
-        tags, hasTags := flow.Lookup(ctx, ActiveTags)
+        tags, hasTags := ActiveTags.Get(ctx)
         if hasTags && !slices.Contains(tags, tag) {
             return nil // skip
         }
@@ -950,15 +1031,15 @@ flow.Scope(flow.Do(
 By default, cleanup uses the step's context. If the step was cancelled (e.g., timeout), cleanup also gets a cancelled context. Use `WithCleanupTimeout` to give cleanup an independent timeout with a context detached from parent cancellation:
 
 ```go
-flow.WithCleanupTimeout(10*time.Second,
-    flow.Scope(
-        flow.Do(
-            flow.Manage(OpenConn, CloseConn),
-            DoWork,
-        ),
-    ),
-)
+flow.Do(
+    flow.Manage(OpenConn, CloseConn),
+    DoWork,
+).Scoped().WithCleanupTimeout(10 * time.Second)
 ```
+
+The method chain reads inner-to-outer, left to right: scope the step, then
+give its cleanup a timeout. The nested function form
+`flow.WithCleanupTimeout(10*time.Second, flow.Scope(...))` is equivalent.
 
 The timeout is inherited through nested scopes and can be overridden by a closer `WithCleanupTimeout`:
 
@@ -1389,11 +1470,11 @@ flow.Pipeline(
 ```
 
 **Quick reference:**
-- `With(extract, consume)` → `Extract + Consume → Step`
-- `From(extract, transform)` → `Extract + Transform → Extract`
-- `Feed(transform, consume)` → `Transform + Consume → Consume`
-- `Pipeline(extract, transform, consume)` → `Extract + Transform + Consume → Step`
-- `Chain(transform1, transform2)` → `Transform + Transform → Transform`
+- `With(extract, consume)` / `extract.To(consume)` → `Extract + Consume → Step`
+- `From(extract, transform)` / `extract.Via(transform)` → `Extract + Transform → Extract`
+- `Feed(transform, consume)` / `transform.To(consume)` → `Transform + Consume → Consume`
+- `Pipeline(extract, transform, consume)` / `extract.Via(transform).To(consume)` → `Extract + Transform + Consume → Step`
+- `Chain(transform1, transform2)` / `transform1.Then(transform2)` → `Transform + Transform → Transform`
 
 ---
 

@@ -16,7 +16,24 @@ During the **v0.x series**, breaking API changes may occur between minor version
 
 ## [Unreleased]
 
+### Changed
+- **Breaking**: `Step`, `Extract`, `Transform`, `Consume`, and `Predicate` are
+  now defined function types instead of type aliases. Function literals and
+  plain functions remain directly assignable; code that declared its own named
+  function types for these signatures may need explicit conversions.
+- **Breaking**: Removed `Chain3` and `Chain4`; use the `Transform.Then` method,
+  which chains transforms to any length.
+- **Breaking**: Requires Go 1.27+ (generic methods).
+
 ### Added
+- Fluent method API on the core types, mirroring the package-level combinators:
+  - Pipelines: `Extract.Via`/`Extract.To`/`Extract.Spawn`,
+    `Transform.Then`/`Transform.To` (`Via` and `Then` are generic methods)
+  - Step decorators: `Step.Then`, `Step.Named`, `Step.Retry`, `Step.When`,
+    `Step.Unless`, `Step.While`, `Step.WithTimeout`, `Step.IgnoreError`,
+    `Step.OnError`, `Step.Scoped`, `Step.WithCleanupTimeout`
+  - Predicates: `Predicate.And`, `Predicate.Or`, `Predicate.Not`
+  - Workflow-scoped values: `Key.Get`, `Key.Set`
 - Scope-based resource cleanup via `Scope`, `Manage`, and `WithCleanupTimeout`
   - `Scope` wraps a step and runs registered cleanups in LIFO order on exit, including after panics
   - `Manage` pairs an acquire step with a cleanup step, registering cleanup with the enclosing `Scope`

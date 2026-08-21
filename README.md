@@ -8,6 +8,8 @@ A Go library for building complex, type-safe workflows from simple steps.
 go get github.com/sam-fredrickson/flow
 ```
 
+Requires Go 1.27+ (the fluent API uses generic methods).
+
 ## Quick Example
 
 ```go
@@ -66,6 +68,23 @@ flow.InParallel(flow.Steps(
 flow.InParallel(
     flow.ForEach(GetServices, DeployService),
 )
+```
+
+**Fluent composition** for data pipelines and decorators, reading
+left-to-right in data-flow order:
+
+```go
+// Collect pages from an API, extract and validate records, save each one.
+flow.Collect(FetchNextPage).
+    Via(flow.Render(ExtractRecords)).
+    Via(flow.Flatten).
+    Via(flow.Render(ValidateRecord)).
+    To(flow.Apply(SaveRecord))
+
+// Decorators chain as methods.
+CreateUser("admin").
+    Then(GrantAllPrivileges("admin")).
+    Retry(flow.UpTo(3))
 ```
 
 For more sophisticated patterns, see:

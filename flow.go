@@ -11,7 +11,7 @@ import (
 // T is some kind of state upon which the procedure operates.
 //
 // If using parallel steps, ensure that access to T is thread-safe.
-type Step[T any] = func(context.Context, T) error
+type Step[T any] func(context.Context, T) error
 
 // Extract is a failable, cancelable procedure that returns a value.
 //
@@ -19,7 +19,7 @@ type Step[T any] = func(context.Context, T) error
 // U is the returned value.
 //
 // If using parallel steps, ensure that access to T is thread-safe.
-type Extract[T any, U any] = func(context.Context, T) (U, error)
+type Extract[T any, U any] func(context.Context, T) (U, error)
 
 // A Transform is a failable, cancelable procedure that converts one input
 // into an output.
@@ -29,7 +29,7 @@ type Extract[T any, U any] = func(context.Context, T) (U, error)
 // T is some kind of state upon which the procedure operates.
 //
 // If using parallel steps, ensure that access to T is thread-safe.
-type Transform[T any, In any, Out any] = func(context.Context, T, In) (Out, error)
+type Transform[T any, In any, Out any] func(context.Context, T, In) (Out, error)
 
 // Consume is a failable, cancelable procedure that takes a parameter.
 //
@@ -37,7 +37,7 @@ type Transform[T any, In any, Out any] = func(context.Context, T, In) (Out, erro
 // U is the input value to be consumed/processed.
 //
 // If using parallel steps, ensure that access to T is thread-safe.
-type Consume[T any, U any] = func(context.Context, T, U) error
+type Consume[T any, U any] func(context.Context, T, U) error
 
 // Pipeline composes an [Extract], [Transform], and [Consume] into a complete [Step].
 //
@@ -158,6 +158,11 @@ func From[T, A, B any](
 // transform becomes the input to the second. Both transforms have access
 // to the same state T.
 //
+// For longer pipelines, use the [Transform.Then] method, which chains
+// any number of transforms fluently:
+//
+//	Parse.Then(Validate).Then(Normalize)
+//
 // Example:
 //
 //	parseAndValidate := Chain(
@@ -175,84 +180,6 @@ func Chain[T, A, B, C any](
 			return zero, err
 		}
 		return second(ctx, t, b)
-	}
-}
-
-// Chain3 composes three Transforms into a single [Transform].
-//
-// This extends [Chain] to handle three-stage transformation pipelines. Each
-// transform has access to the same state T.
-//
-// Example:
-//
-//	processData := Chain3(
-//	    Parse,      // Transform[*State, []byte, RawData]
-//	    Validate,   // Transform[*State, RawData, ValidData]
-//	    Normalize,  // Transform[*State, ValidData, NormData]
-//	)               // Transform[*State, []byte, NormData]
-func Chain3[T, A, B, C, D any](
-	first Transform[T, A, B],
-	second Transform[T, B, C],
-	third Transform[T, C, D],
-) Transform[T, A, D] {
-	return func(ctx context.Context, t T, a A) (D, error) {
-		b, err := first(ctx, t, a)
-		if err != nil {
-			var zero D
-			return zero, err
-		}
-		c, err := second(ctx, t, b)
-		if err != nil {
-			var zero D
-			return zero, err
-		}
-		return third(ctx, t, c)
-	}
-}
-
-// Chain4 composes four Transforms into a single [Transform].
-//
-// This extends [Chain] to handle four-stage transformation pipelines. Each
-// transform has access to the same state T.
-//
-// For longer pipelines, you can nest [Chain] functions:
-//
-//	Chain(
-//	    Chain4(t1, t2, t3, t4),
-//	    Chain4(t5, t6, t7, t8),
-//	)
-//
-// Example:
-//
-//	processRequest := Chain4(
-//	    Decode,     // Transform[*State, []byte, Request]
-//	    Validate,   // Transform[*State, Request, ValidReq]
-//	    Enrich,     // Transform[*State, ValidReq, EnrichedReq]
-//	    Sanitize,   // Transform[*State, EnrichedReq, SafeReq]
-//	)               // Transform[*State, []byte, SafeReq]
-func Chain4[T, A, B, C, D, E any](
-	first Transform[T, A, B],
-	second Transform[T, B, C],
-	third Transform[T, C, D],
-	fourth Transform[T, D, E],
-) Transform[T, A, E] {
-	return func(ctx context.Context, t T, a A) (E, error) {
-		b, err := first(ctx, t, a)
-		if err != nil {
-			var zero E
-			return zero, err
-		}
-		c, err := second(ctx, t, b)
-		if err != nil {
-			var zero E
-			return zero, err
-		}
-		d, err := third(ctx, t, c)
-		if err != nil {
-			var zero E
-			return zero, err
-		}
-		return fourth(ctx, t, d)
 	}
 }
 

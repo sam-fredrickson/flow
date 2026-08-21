@@ -22,7 +22,7 @@
 // [Step] is the fundamental building block. A step is a function that accepts
 // a context and state, returning an error:
 //
-//	type Step[T any] = func(context.Context, T) error
+//	type Step[T any] func(context.Context, T) error
 //
 // Steps are composable: you can combine them to build complex workflows while
 // maintaining type safety. Each step can read from and modify the shared state.
@@ -38,15 +38,35 @@
 // The [Pipeline] function combines an [Extract], [Transform], and [Consume]
 // into a complete [Step].
 //
-//	type Extract[T any, U any] = func(context.Context, T) (U, error)
-//	type Transform[T any, In any, Out any] = func(context.Context, T, In) (Out, error)
-//	type Consume[T any, U any] = func(context.Context, T, U) error
+//	type Extract[T any, U any] func(context.Context, T) (U, error)
+//	type Transform[T any, In any, Out any] func(context.Context, T, In) (Out, error)
+//	type Consume[T any, U any] func(context.Context, T, U) error
 //
 //	func Pipeline[T, A, B any](
 //		extract Extract[T, A],
 //		transform Transform[T, A, B],
 //		consume Consume[T, B],
 //	) Step[T]
+//
+// # Fluent Composition
+//
+// The core types are defined function types, so composition is also available
+// as methods that read left-to-right in data-flow order. [Extract.Via] applies
+// a transform, [Extract.To] attaches a consumer, and [Transform.Then] chains
+// transforms to any length:
+//
+//	// Equivalent to Pipeline(GetRawConfig, Chain(Parse, Validate), Save):
+//	GetRawConfig.Via(Parse).Via(Validate).To(Save)
+//
+// [Step] and [Predicate] have method forms of their combinators as well:
+//
+//	Deploy.Retry(UpTo(3)).When(IsProduction.And(IsHealthy)).Named("deploy")
+//
+// Methods and package-level functions are interchangeable; use whichever
+// reads better. Values returned by flow combinators already have the right
+// defined type for method chaining, while a plain function declaration must
+// first be converted (e.g. Extract[*State, Config](LoadConfig)) to give it
+// a method set.
 //
 // # Parallel Execution
 //
@@ -235,5 +255,6 @@
 //
 // # Requirements
 //
-// Flow requires Go 1.24 or later and has minimal external dependencies.
+// Flow requires Go 1.27 or later (for generic methods) and has minimal
+// external dependencies.
 package flow

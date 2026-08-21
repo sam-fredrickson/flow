@@ -77,10 +77,8 @@ func main() {
 
 	// Example 1: Trace and write text output
 	fmt.Println("=== Example 1: Basic Text Trace ===")
-	err := flow.Spawn(
-		flow.Traced(workflow),
-		flow.WriteTextTo(os.Stdout),
-	)(ctx, state)
+	err := flow.Traced(workflow).
+		Spawn(flow.WriteTextTo(os.Stdout))(ctx, state)
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -89,10 +87,8 @@ func main() {
 
 	// Example 2: Trace and write JSON output
 	fmt.Println("\n=== Example 2: JSON Trace ===")
-	err = flow.Spawn(
-		flow.Traced(workflow),
-		flow.WriteJSONTo(os.Stdout),
-	)(ctx, state)
+	err = flow.Traced(workflow).
+		Spawn(flow.WriteJSONTo(os.Stdout))(ctx, state)
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

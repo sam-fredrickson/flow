@@ -414,7 +414,7 @@ func TestChain(t *testing.T) {
 	}
 }
 
-func TestChain3(t *testing.T) {
+func TestTransformThen3(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
 		name            string
@@ -427,17 +427,17 @@ func TestChain3(t *testing.T) {
 			step: With(
 				GetCount,
 				Feed(
-					Chain3(
-						// int64 -> string
-						func(_ context.Context, c *CountingFlow, n int64) (string, error) {
-							return fmt.Sprintf("%d", n+3), nil
-						},
+					// int64 -> string
+					Transform[*CountingFlow, int64, string](func(_ context.Context, c *CountingFlow, n int64) (string, error) {
+						return fmt.Sprintf("%d", n+3), nil
+					}).Then(
 						// string -> int64
 						func(_ context.Context, c *CountingFlow, s string) (int64, error) {
 							var result int64
 							_, _ = fmt.Sscanf(s, "%d", &result)
 							return result * 2, nil
 						},
+					).Then(
 						// int64 -> string (final)
 						func(_ context.Context, c *CountingFlow, n int64) (string, error) {
 							return fmt.Sprintf("result:%d", n+1), nil
@@ -460,13 +460,13 @@ func TestChain3(t *testing.T) {
 			step: With(
 				GetCount,
 				Feed(
-					Chain3(
-						func(_ context.Context, c *CountingFlow, n int64) (string, error) {
-							return "test", nil
-						},
+					Transform[*CountingFlow, int64, string](func(_ context.Context, c *CountingFlow, n int64) (string, error) {
+						return "test", nil
+					}).Then(
 						func(_ context.Context, c *CountingFlow, s string) (int64, error) {
 							return 0, error2
 						},
+					).Then(
 						func(_ context.Context, c *CountingFlow, n int64) (string, error) {
 							return "ok", nil
 						},
@@ -490,7 +490,7 @@ func TestChain3(t *testing.T) {
 	}
 }
 
-func TestChain4(t *testing.T) {
+func TestTransformThen4(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
 		name            string
@@ -503,21 +503,22 @@ func TestChain4(t *testing.T) {
 			step: With(
 				GetCount,
 				Feed(
-					Chain4(
-						// int64 -> string
-						func(_ context.Context, c *CountingFlow, n int64) (string, error) {
-							return fmt.Sprintf("%d", n+2), nil
-						},
+					// int64 -> string
+					Transform[*CountingFlow, int64, string](func(_ context.Context, c *CountingFlow, n int64) (string, error) {
+						return fmt.Sprintf("%d", n+2), nil
+					}).Then(
 						// string -> int64
 						func(_ context.Context, c *CountingFlow, s string) (int64, error) {
 							var result int64
 							_, _ = fmt.Sscanf(s, "%d", &result)
 							return result * 3, nil
 						},
+					).Then(
 						// int64 -> string
 						func(_ context.Context, c *CountingFlow, n int64) (string, error) {
 							return fmt.Sprintf("val:%d", n+1), nil
 						},
+					).Then(
 						// string -> int64 (final)
 						func(_ context.Context, c *CountingFlow, s string) (int64, error) {
 							var n int64
@@ -539,16 +540,17 @@ func TestChain4(t *testing.T) {
 			step: With(
 				GetCount,
 				Feed(
-					Chain4(
-						func(_ context.Context, c *CountingFlow, n int64) (string, error) {
-							return "test", nil
-						},
+					Transform[*CountingFlow, int64, string](func(_ context.Context, c *CountingFlow, n int64) (string, error) {
+						return "test", nil
+					}).Then(
 						func(_ context.Context, c *CountingFlow, s string) (int64, error) {
 							return 42, nil
 						},
+					).Then(
 						func(_ context.Context, c *CountingFlow, n int64) (string, error) {
 							return "", error3
 						},
+					).Then(
 						func(_ context.Context, c *CountingFlow, s string) (int64, error) {
 							return 200, nil
 						},

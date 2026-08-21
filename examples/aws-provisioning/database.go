@@ -21,20 +21,16 @@ func CreateDatabases() flow.Step[*Env] {
 }
 
 func createDBInstance(spec DBInstanceSpec) flow.Step[*Env] {
-	return flow.Named(spec.Identifier, flow.Do(
+	return flow.Do(
 		createDBSubnetGroup(spec),
-		flow.Retry(createInstance(spec),
+		createInstance(spec).Retry(
 			flow.UpTo(5),
 			flow.ExponentialBackoff(50*time.Millisecond, flow.WithFullJitter()),
 		),
-		flow.While(
-			instanceNotReady(spec.Identifier),
-			flow.Do(
-				flow.Sleep[*Env](10*time.Millisecond),
-				describeInstance(spec.Identifier),
-			),
-		),
-	))
+		flow.Sleep[*Env](10*time.Millisecond).
+			Then(describeInstance(spec.Identifier)).
+			While(instanceNotReady(spec.Identifier)),
+	).Named(spec.Identifier)
 }
 
 func createDBSubnetGroup(spec DBInstanceSpec) flow.Step[*Env] {

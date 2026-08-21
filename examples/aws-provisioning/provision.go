@@ -131,10 +131,8 @@ func main() {
 	fmt.Println("Running infrastructure provisioning workflow...")
 	fmt.Println()
 
-	err := flow.Spawn(
-		flow.Traced(Provision()),
-		flow.WriteFlatTextTo(os.Stdout),
-	)(ctx, env)
+	err := flow.Traced(Provision()).
+		Spawn(flow.WriteFlatTextTo(os.Stdout))(ctx, env)
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\nError: %v\n", err)
@@ -209,15 +207,13 @@ func DefaultConfig() EnvConfig {
 							CreateDatabase("jobs_db"),
 							CreateUser("jobs_user"),
 							GrantReadWrite("jobs_user", "jobs_db"),
-							flow.IgnoreError(CreateMonitoringUser("jobs_db")),
+							CreateMonitoringUser("jobs_db").IgnoreError(),
 						),
 					},
 					{
 						Instance: "analytics-db",
-						Setup: flow.Do(
-							CreateUser("jobs_reader"),
-							GrantReadOnly("jobs_reader", "analytics_db"),
-						),
+						Setup: CreateUser("jobs_reader").
+							Then(GrantReadOnly("jobs_reader", "analytics_db")),
 					},
 				},
 			},

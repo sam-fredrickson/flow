@@ -56,18 +56,14 @@ func InsertRecords(ctx context.Context, s *AppState) error {
 }
 
 func main() {
-	workflow := flow.WithCleanupTimeout(10*time.Second,
-		flow.Scope(
-			flow.Do(
-				// Manage: acquire a connection, cleanup closes it.
-				flow.Manage(OpenConnection, CloseConnection),
-				// Manage: begin a transaction, cleanup rolls it back.
-				flow.Manage(BeginTx, RollbackTx),
-				// Do work with the resources stored in state.
-				InsertRecords,
-			),
-		),
-	)
+	workflow := flow.Do(
+		// Manage: acquire a connection, cleanup closes it.
+		flow.Manage(OpenConnection, CloseConnection),
+		// Manage: begin a transaction, cleanup rolls it back.
+		flow.Manage(BeginTx, RollbackTx),
+		// Do work with the resources stored in state.
+		InsertRecords,
+	).Scoped().WithCleanupTimeout(10 * time.Second)
 
 	fmt.Println("running workflow:")
 	state := &AppState{DSN: "postgres://localhost/mydb"}

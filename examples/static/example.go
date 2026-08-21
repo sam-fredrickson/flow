@@ -44,39 +44,26 @@ var ProvisionDatabase = flow.Do(
 				return []string{"app_user", "analytics_user", "readonly_user"}, nil
 			},
 			func(username string) flow.Step[*DatabaseSpec] {
-				return flow.Do(
-					CreateUser(username),
-					GrantDatabaseAccess(username, username+"_db"),
-				)
+				return CreateUser(username).
+					Then(GrantDatabaseAccess(username, username+"_db"))
 			},
 		),
 	),
 
 	// Special users: conditional replication, admin with retry, monitoring
 	// best-effort, and final validation
-	flow.When(
-		IsReplica(),
-		flow.Do(
-			CreateUser("replicator"),
-			SetBinlogRetention(72),
-			GrantReplicationPrivileges("replicator"),
-			GrantGlobalReadAccess("replicator"),
-		),
-	),
-	flow.Retry(
-		flow.Do(
-			CreateUser("admin"),
-			GrantAllPrivileges("admin"),
-		),
-		flow.UpTo(3),
-		flow.ExponentialBackoff(100*time.Millisecond),
-	),
-	flow.IgnoreError(
-		flow.Do(
-			CreateUser("monitor"),
-			GrantMetricsAccess("monitor"),
-		),
-	),
+	flow.Do(
+		CreateUser("replicator"),
+		SetBinlogRetention(72),
+		GrantReplicationPrivileges("replicator"),
+		GrantGlobalReadAccess("replicator"),
+	).When(IsReplica()),
+	CreateUser("admin").
+		Then(GrantAllPrivileges("admin")).
+		Retry(flow.UpTo(3), flow.ExponentialBackoff(100*time.Millisecond)),
+	CreateUser("monitor").
+		Then(GrantMetricsAccess("monitor")).
+		IgnoreError(),
 	ValidateConfiguration(),
 )
 

@@ -55,12 +55,9 @@ func gatherDBSetup(_ context.Context, env *Env) ([]InstanceSetup, error) {
 
 // runInstanceSetup runs all service setup steps for one instance using Spawn.
 func runInstanceSetup(setup InstanceSetup) flow.Step[*Env] {
-	return flow.Named(setup.InstanceID,
-		flow.Spawn(
-			deriveDBContext(setup.InstanceID),
-			flow.InParallel(flow.Steps(setup.Steps...)),
-		),
-	)
+	return deriveDBContext(setup.InstanceID).
+		Spawn(flow.InParallel(flow.Steps(setup.Steps...))).
+		Named(setup.InstanceID)
 }
 
 // deriveDBContext creates the child state for per-instance DB setup.
