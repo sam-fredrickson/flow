@@ -144,7 +144,13 @@ func InSerialWith[T any](
 type ParallelOptions struct {
 	// Limit controls how many goroutines may run.
 	//
-	// Numbers less than or equal to zero indicate no limit.
+	// The interpretation of values less than or equal to zero varies by
+	// function. Where the amount of work is known up front ([InParallelWith],
+	// [RenderParallel], [ApplyParallel]), they mean no limit: everything may
+	// run at once. Where work is pulled on demand ([DrainParallel]), "no
+	// limit" is not meaningful — the limit is what bounds both concurrency
+	// and in-flight items — so they mean a default of [runtime.GOMAXPROCS]
+	// workers. See each function's documentation.
 	Limit int
 
 	// JoinErrors controls error handling.
@@ -159,6 +165,23 @@ type ParallelOptions struct {
 	// goroutines are scheduled and the context error is included in the
 	// joined result.
 	JoinErrors bool
+
+	// Prefetch lets [DrainParallel] pull items from its source ahead of
+	// demand, so that a slow source (such as one fetching pages) makes
+	// progress while workers are busy consuming earlier items. It bounds
+	// how many items may have been pulled but not yet taken by a worker.
+	// Values less than or equal to zero disable prefetching: an item is
+	// pulled only when a worker is ready for it.
+	//
+	// When the drain stops early, on an error or cancellation, up to
+	// Prefetch pulled items are discarded without being consumed. Avoid
+	// prefetching from sources where pulling removes or commits the item,
+	// like popping from a list or auto-acknowledging queue receives. Queues
+	// that are acknowledged after consuming are fine: discarded items are
+	// never acknowledged, so the queue redelivers them.
+	//
+	// Other functions ignore this field.
+	Prefetch int
 }
 
 // InParallel combines multiple step sequences and runs them concurrently.

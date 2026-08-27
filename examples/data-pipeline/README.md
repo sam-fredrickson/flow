@@ -1,12 +1,13 @@
 # Data Pipeline Example
 
-This example demonstrates the **collection operators** (`Collect`, `Render`, `Apply`) for building clean, composable data processing pipelines.
+This example demonstrates the **collection operators** (`Collect`, `Render`, `Apply`) for building clean, composable data processing pipelines, and their **streaming counterparts** (`Stream`, `Expand`, `DrainParallel`) for processing items one at a time without holding the whole collection in memory.
 
 ## What This Example Shows
 
 Three common patterns in data processing:
 
 1. **Complete ETL Pipeline** - Pull data from a paginated API, transform it through multiple stages, and save
+   - **1b. Streaming ETL Pipeline** - The same pipeline, streamed one page at a time and saved by a pool of workers
 2. **Queue Processing** - Drain a queue by pulling items until exhausted
 3. **Batch Transformation** - Transform and save a batch of cached records
 
@@ -71,6 +72,24 @@ flow.With(
 )
 ```
 
+## Streaming Counterparts
+
+`Collect` pulls every page before anything downstream runs. The streaming combinators process items as they arrive instead:
+
+```go
+flow.Expand(flow.Stream(FetchNextPage).Via(ExtractRecords)).
+    Via(ValidateRecord).
+    Via(EnrichRecord).
+    DrainParallel(SaveRecord, flow.ParallelOptions{Limit: 4})
+```
+
+- `Stream` marks `FetchNextPage` as a `Source`: an `Extract` that returns one item per call until `ErrExhausted`.
+- `Source.Via` transforms each item as it is pulled.
+- `Expand` turns a source of batches (pages of records) into a source of records, buffering one page at a time. It is the streaming counterpart of `Collect` + `Flatten`.
+- `DrainParallel` saves records with a pool of 4 workers. `Drain` is the serial version.
+
+Because `SaveRecord` runs on several workers at once, the state it touches must be thread-safe; here `recordsSaved` is updated atomically. See the [drain-parallel example](../drain-parallel/) for how `ParallelOptions.Prefetch` keeps those workers busy while the next page is fetched.
+
 ## Running the Example
 
 ```bash
@@ -91,6 +110,16 @@ Example 1: Complete ETL Pipeline (Collect → Render → Apply)
 💾 Saved record rec-002: Record 2 (0.76, medium)
 ...
 ✅ Pipeline completed: 30 records saved
+
+Example 1b: Streaming ETL Pipeline (Stream → Expand → DrainParallel)
+------------------------------------------------------------
+📥 Fetched page 1 (10 records)
+💾 Saved record rec-004: Record 4 (1.02, high)
+💾 Saved record rec-003: Record 3 (0.89, medium)
+...
+📥 Fetched page 2 (10 records)
+...
+✅ Streaming pipeline completed: 30 records saved
 
 Example 2: Queue Processing (Collect → Apply)
 ------------------------------------------------------------
@@ -173,6 +202,9 @@ See the [Collection Processing](../../docs/guide.md#collection-processing) secti
 example.go
 ├─ Example 1: Complete ETL Pipeline
 │  └─ Collect → Render → Render → Apply
+│
+├─ Example 1b: Streaming ETL Pipeline
+│  └─ Stream → Expand → Via → Via → DrainParallel
 │
 ├─ Example 2: Queue Processing
 │  └─ Collect → Apply

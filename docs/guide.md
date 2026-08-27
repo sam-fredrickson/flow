@@ -507,10 +507,124 @@ flow.InParallel(
 
 **Note:** `DeployService` is a *step constructor*—it takes a parameter and returns a `Step[*Config]`. This is the pattern to use when parameterizing steps.
 
+### Streaming Collection Processing
+
+`Collect` pulls every item before anything downstream runs, so the whole
+collection sits in memory at once. When a collection is large, unbounded, or
+arrives in pages, stream it instead: pull items one at a time and process
+each as it arrives.
+
+#### Sources
+
+A `Source[T, U]` is an `Extract[T, U]` that follows the same iterator
+protocol `Collect` uses: each call returns the next item, and
+`flow.ErrExhausted` signals the end. `Stream` marks an extract as a source:
+
+```go
+func Stream[T, U any](next Extract[T, U]) Source[T, U]
+```
+
+`Source.Via` transforms each item as it is pulled. `Expand` turns a source of
+batches, such as pages, into a source of items, buffering at most one batch
+at a time. It is the streaming counterpart of `Collect` + `Flatten`:
+
+```go
+func Expand[T, U any](next Source[T, []U]) Source[T, U]
+```
+
+#### Drain and DrainParallel
+
+`Drain` pulls every item from a source and consumes it, serially. It is the
+streaming counterpart of `Collect` + `Apply`. `DrainParallel` does the same
+with a pool of workers:
+
+```go
+// One record at a time
+flow.Expand(flow.Stream(FetchNextPage).Via(ExtractRecords)).
+    Via(ValidateRecord).
+    Drain(SaveRecord)
+
+// Up to 8 records saved at once
+flow.Expand(flow.Stream(FetchNextPage).Via(ExtractRecords)).
+    Via(ValidateRecord).
+    DrainParallel(SaveRecord, flow.ParallelOptions{Limit: 8})
+```
+
+Both are also package-level functions: `flow.Drain(source, consume)` and
+`flow.DrainParallel(source, consume, opts)`. Per-item errors are wrapped in
+`IndexedError`, indexed by the order items were pulled.
+
+`DrainParallel` fails fast by default. With `JoinErrors`, consumer errors are
+collected and the pool keeps going, but an error from the source still stops
+pulling, since the source is presumed broken. Beyond that:
+
+- **Pulls are serialized.** Only one pull runs at a time, so a source needs
+  no locking. That includes `Expand`, which keeps its current batch in a
+  closure. Consumers do run concurrently; see
+  [Thread Safety in Parallel Execution](#thread-safety-in-parallel-execution).
+- **`Limit <= 0` means `runtime.GOMAXPROCS` workers**, not unlimited, since a
+  pull-based loop needs some bound.
+- **Consumption order is unspecified.** Items go to whichever worker is free.
+
+#### Prefetching
+
+By default, `DrainParallel` pulls an item only when a worker is ready for it.
+With a paginated source, the next page is fetched only once the current one
+runs out, and every worker sits idle until the fetch returns. Setting
+`Prefetch` lets a dedicated goroutine pull up to that many items ahead of the
+workers, so the next page is fetched while they are still busy:
+
+```go
+flow.Expand(flow.Stream(FetchNextPage).Via(ExtractRecords)).
+    DrainParallel(SaveRecord, flow.ParallelOptions{
+        Limit:    8,
+        Prefetch: 100, // about one page
+    })
+```
+
+About one batch is a good starting value. See
+[examples/drain-parallel](../examples/drain-parallel/) for a timeline of the
+difference it makes.
+
+Prefetching is opt-in because if the drain stops early, on an error or
+cancellation, up to `Prefetch` pulled items are discarded without being
+consumed. That's harmless for reads like pagination, but avoid it for sources
+where pulling removes or commits the item, like popping from a list or
+auto-acknowledging queue receives. Queues that are acknowledged after
+consuming are fine: discarded items are never acknowledged, so the queue
+redelivers them.
+
+With or without prefetching, the source is never called after
+`DrainParallel` returns.
+
+#### One-Shot Sources
+
+Sources built by `Expand`, and any source that keeps its position in a
+closure, are one-shot: once drained, they stay exhausted. Build a fresh one
+for each run, for example by returning the pipeline from a step constructor:
+
+```go
+func SyncRecords() flow.Step[*State] {
+    return flow.Expand(flow.Stream(FetchNextPage).Via(ExtractRecords)).
+        DrainParallel(SaveRecord, flow.ParallelOptions{Limit: 8})
+}
+```
+
+A source that keeps its position in `T`, like a pager storing its cursor on
+the state, is as reusable as that state allows.
+
+When a later stage needs the whole collection after all, `Source.Collect`
+turns a source back into an `Extract[T, []U]`.
+
 ### Decision Guide: Which Pattern?
 
 ```
 Processing a collection?
+├─ Is it large, unbounded, or paginated, so you'd rather not hold it all in memory?
+│  └─ Yes → Stream it: Stream/Expand + Drain/DrainParallel
+│           - At most one item or batch buffered at a time
+│           - Serial (Drain) or a worker pool (DrainParallel)
+│
 ├─ Do you need parallel execution flexibility?
 │  ├─ Yes → Use ForEach + InSerial/InParallel
 │  │        - Define with ForEach
@@ -530,13 +644,14 @@ Processing a collection?
 
 ### Comparison
 
-| Aspect | ForEach Pattern | Collect/Render/Apply |
-|--------|----------------|----------------------|
-| **Execution** | Serial OR parallel | Serial only |
-| **Usage** | Requires orchestrator (`InSerial`/`InParallel`) | Direct composition in pipelines |
-| **Flexibility** | Easy to switch between serial/parallel | Fixed serial execution |
-| **Composition** | Less composable (returns `StepsProvider`) | Highly composable (returns Extract/Transform/Consume) |
-| **Best for** | Independent items, parallel potential | Ordered processing, functional pipelines |
+| Aspect | ForEach Pattern | Collect/Render/Apply | Streaming |
+|--------|----------------|----------------------|-----------|
+| **Execution** | Serial OR parallel | Serial only | Serial (`Drain`) or worker pool (`DrainParallel`) |
+| **Usage** | Requires orchestrator (`InSerial`/`InParallel`) | Direct composition in pipelines | Direct composition, ending in a `Step` |
+| **Flexibility** | Easy to switch between serial/parallel | Fixed serial execution | Switch `Drain` ↔ `DrainParallel` |
+| **Composition** | Less composable (returns `StepsProvider`) | Highly composable (returns Extract/Transform/Consume) | Per-item transforms with `Source.Via` |
+| **Memory** | Whole list | Whole slice | One item or batch at a time |
+| **Best for** | Independent items, parallel potential | Ordered processing, functional pipelines | Large, unbounded, or paginated collections |
 
 ---
 
@@ -1368,7 +1483,9 @@ func QuickOperation() flow.Step[*State] {
 
 ### Thread Safety in Parallel Execution
 
-When using `InParallel`, be careful about concurrent access to shared state:
+When using `InParallel`, be careful about concurrent access to shared state.
+The same goes for the consumer passed to `DrainParallel`, which runs on
+several workers at once (though the source it pulls from does not):
 
 ```go
 // ❌ Dangerous: Multiple goroutines modifying state concurrently

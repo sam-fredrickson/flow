@@ -81,6 +81,11 @@ flow.Collect(FetchNextPage).
     Via(flow.Render(ValidateRecord)).
     To(flow.Apply(SaveRecord))
 
+// Or stream it: one page in memory at a time, records saved by 8 workers.
+flow.Expand(flow.Stream(FetchNextPage).Via(ExtractRecords)).
+    Via(ValidateRecord).
+    DrainParallel(SaveRecord, flow.ParallelOptions{Limit: 8})
+
 // Decorators chain as methods.
 CreateUser("admin").
     Then(GrantAllPrivileges("admin")).
@@ -91,6 +96,7 @@ For more sophisticated patterns, see:
 
 - **[Configuration-driven orchestration](examples/config-driven/)** — Components declare their needs, orchestration layer optimizes execution
 - **[Data transformation pipelines](examples/data-pipeline/)** — Type-safe functional composition for processing collections
+- **[Streaming with a worker pool](examples/drain-parallel/)** — Drain a paginated API with `DrainParallel`, overlapping page fetches with `Prefetch`
 
 ## Documentation
 

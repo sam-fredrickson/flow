@@ -157,6 +157,40 @@ func (s Step[T]) OnError(handler Transform[T, error, Step[T]]) Step[T] {
 	return OnError(s, handler)
 }
 
+// Via applies a transform to each item pulled from this source, producing a
+// new [Source] whose item type may differ from this one's.
+//
+// This is [From] specialized to the streaming protocol: each pull takes one
+// item from the source and transforms it, and [ErrExhausted] passes through
+// untouched. Unlike [Extract.Via] over slices, no collection is realized.
+//
+//	flow.Stream(FetchNextItem).Via(Validate).Via(Enrich)
+func (s Source[T, U]) Via[Next any](transform Transform[T, U, Next]) Source[T, Next] {
+	return Source[T, Next](From(Extract[T, U](s), transform))
+}
+
+// Drain consumes every item pulled from this source, serially; see [Drain].
+//
+//	flow.Stream(FetchNextItem).Drain(SaveItem) // Step[*State]
+func (s Source[T, U]) Drain(consume Consume[T, U]) Step[T] {
+	return Drain(s, consume)
+}
+
+// DrainParallel consumes items pulled from this source with a pool of
+// concurrent workers; see [DrainParallel].
+//
+//	flow.Stream(FetchNextItem).DrainParallel(SaveItem, flow.ParallelOptions{Limit: 8})
+func (s Source[T, U]) DrainParallel(consume Consume[T, U], opts ParallelOptions) Step[T] {
+	return DrainParallel(s, consume, opts)
+}
+
+// Collect materializes this source into a slice-producing [Extract]; see
+// [Collect]. Use it to exit the streaming world when a downstream stage
+// genuinely needs the whole collection.
+func (s Source[T, U]) Collect() Extract[T, []U] {
+	return Collect(Extract[T, U](s))
+}
+
 // And combines this predicate with others using logical AND; see [And].
 func (p Predicate[T]) And(others ...Predicate[T]) Predicate[T] {
 	return And(append([]Predicate[T]{p}, others...)...)

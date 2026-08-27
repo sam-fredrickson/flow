@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/sam-fredrickson/flow"
@@ -28,7 +29,7 @@ type State struct {
 
 	// Statistics
 	recordsProcessed int
-	recordsSaved     int
+	recordsSaved     int64 // atomic: SaveRecord may run concurrently
 }
 
 // RawRecord represents data from the API.
@@ -76,6 +77,27 @@ func ProcessAllData() flow.Step[*State] {
 		Via(flow.Render(ValidateRecord)).
 		Via(flow.Render(EnrichRecord)).
 		To(flow.Apply(SaveRecord))
+}
+
+// =============================================================================
+// Example 1b: The Same Pipeline, Streaming and Concurrent
+// =============================================================================
+
+// ProcessAllDataStreaming is the streaming counterpart of [ProcessAllData]:
+// the same stages, but no stage ever realizes the full collection. At most
+// one page is buffered at a time (in Expand), and records are saved
+// concurrently by a pool of workers.
+//
+// Because DrainParallel runs SaveRecord on multiple goroutines, state
+// touched by the consumer must be thread-safe (recordsSaved is atomic).
+func ProcessAllDataStreaming() flow.Step[*State] {
+	// Stream pages from the API, then per record:
+	//   expand each page into records (one page buffered at a time),
+	//   validate, enrich, and save — 4 records in flight at once.
+	return flow.Expand(flow.Stream(FetchNextPage).Via(ExtractRecords)).
+		Via(ValidateRecord).
+		Via(EnrichRecord).
+		DrainParallel(SaveRecord, flow.ParallelOptions{Limit: 4})
 }
 
 // =============================================================================
@@ -209,7 +231,7 @@ func SaveRecord(ctx context.Context, state *State, record EnrichedRecord) error 
 	// Simulate database save with delay
 	time.Sleep(5 * time.Millisecond)
 
-	state.recordsSaved++
+	atomic.AddInt64(&state.recordsSaved, 1)
 	fmt.Printf("💾 Saved record %s: %s (%.2f, %s)\n",
 		record.ID, record.Name, record.NormalizedValue, record.Category)
 
@@ -286,6 +308,19 @@ func main() {
 		fmt.Printf("\n✅ Pipeline completed: %d records saved\n", state1.recordsSaved)
 	}
 
+	// Example 1b: Streaming ETL Pipeline
+	fmt.Println()
+	fmt.Println()
+	fmt.Println("Example 1b: Streaming ETL Pipeline (Stream → Expand → DrainParallel)")
+	fmt.Println(strings.Repeat("-", 60))
+	state1b := &State{}
+
+	if err := ProcessAllDataStreaming()(ctx, state1b); err != nil {
+		fmt.Printf("❌ Error: %v\n", err)
+	} else {
+		fmt.Printf("\n✅ Streaming pipeline completed: %d records saved\n", state1b.recordsSaved)
+	}
+
 	// Example 2: Queue Processing
 	fmt.Println()
 	fmt.Println()
@@ -345,4 +380,6 @@ func main() {
 	fmt.Println("• Render: Transform each element in a slice (serial, fail-fast)")
 	fmt.Println("• Apply: Consume each element in a slice (serial, fail-fast)")
 	fmt.Println("• All three compose cleanly with Pipeline, From, Chain, Feed, With")
+	fmt.Println("• Stream/Expand/Drain: the same pipeline without realizing slices,")
+	fmt.Println("  with DrainParallel consuming items concurrently")
 }
