@@ -204,8 +204,7 @@ func notMatches(targetErr error) func(error) error {
 
 // isRecoveredPanic validates that the error is a RecoveredPanic.
 func isRecoveredPanic(testErr error) error {
-	var recoveredPanic *RecoveredPanic
-	if !errors.As(testErr, &recoveredPanic) {
+	if _, ok := errors.AsType[*RecoveredPanic](testErr); !ok {
 		return fmt.Errorf("expected RecoveredPanic error, got %v", testErr)
 	}
 	return nil

@@ -543,8 +543,7 @@ func TestRenderParallel(t *testing.T) {
 		var ie2, ie4 *IndexedError
 		for _, wrapped := range []error{err} {
 			for _, inner := range unwrapAll(wrapped) {
-				var ie *IndexedError
-				if errors.As(inner, &ie) {
+				if ie, ok := errors.AsType[*IndexedError](inner); ok {
 					switch ie.Index {
 					case 1:
 						ie2 = ie

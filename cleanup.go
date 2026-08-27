@@ -5,6 +5,7 @@ package flow
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 )
@@ -30,8 +31,8 @@ func (s *cleanupScope) register(fn func(context.Context) error) {
 // Must only be called after all goroutines that might register cleanups have joined.
 func (s *cleanupScope) runAll(ctx context.Context) error {
 	var errs []error
-	for i := len(s.cleanups) - 1; i >= 0; i-- {
-		if err := s.cleanups[i](ctx); err != nil {
+	for _, v := range slices.Backward(s.cleanups) {
+		if err := v(ctx); err != nil {
 			errs = append(errs, err)
 		}
 	}

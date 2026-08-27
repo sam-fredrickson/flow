@@ -246,15 +246,13 @@ func TestTraceThreadSafety(t *testing.T) {
 	// Concurrent access to trace fields
 	var wg sync.WaitGroup
 	for range 10 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_ = trace.Events
 			_ = trace.TotalSteps
 			_ = trace.TotalErrors
 			_ = trace.Duration
 			_ = trace.Filter(NoError())
-		}()
+		})
 	}
 	wg.Wait()
 }
