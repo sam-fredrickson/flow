@@ -161,6 +161,25 @@ flow.InParallelWith(
 )
 ```
 
+`Limit` caps the goroutines of one combinator. To cap concurrency across a
+whole workflow, wrap it in `WithMaxConcurrency`. Every parallel combinator
+nested inside (`InParallelWith`, `RenderParallel`, `ApplyParallel`,
+`DrainParallel`) then draws from one shared pool of slots:
+
+```go
+// At most 10 things running at once, across both batches
+flow.WithMaxConcurrency(10, flow.InParallel(flow.Steps(
+    flow.With(GetOrders, flow.ApplyParallel(ProcessOrder, flow.ParallelOptions{Limit: 20})),
+    flow.With(GetRefunds, flow.ApplyParallel(ProcessRefund, flow.ParallelOptions{Limit: 20})),
+)))
+```
+
+Each running task holds a slot, including outer steps whose own work is
+parallel: above, the two outer steps hold 2 of the 10 slots, leaving 8 for
+orders and refunds. Keep the cap above the number of outer steps that run at
+once. If they hold every slot, their inner work can never start and the
+workflow deadlocks.
+
 **Thread Safety:** When using parallel execution, ensure your state type `T` is thread-safe. See [Thread Safety](#thread-safety-in-parallel-execution) for details.
 
 ### Conditional Execution
@@ -385,11 +404,20 @@ expected. In practice, chains almost always start from a combinator result
 
 ## Collection Processing
 
-When processing collections of items, you have two approaches depending on whether you need parallel execution flexibility.
+When processing collections of items, there are three approaches:
 
-### Serial Collection Operators
+- **Slice operators** (`Collect`, `Render`, `Apply`, and their parallel
+  forms) compose functionally over whole slices.
+- **`ForEach`** turns each item into a step, leaving serial or parallel
+  execution to the orchestrator.
+- **Streaming** (`Stream`, `Expand`, `Drain`, `DrainParallel`) processes
+  items one at a time without holding the whole collection.
 
-Use `Collect`, `Render`, and `Apply` when execution will be serial and you want clean functional composition.
+### Slice Collection Operators
+
+Use `Collect`, `Render`, and `Apply` for clean functional composition over
+slices. They run serially; `RenderParallel` and `ApplyParallel` are
+concurrent drop-in replacements for `Render` and `Apply`.
 
 #### Collect - Repeated Extraction
 
@@ -467,6 +495,33 @@ flow.With(
     Apply(ProcessOrder),        // Consume[*State, Order]
 )
 ```
+
+#### RenderParallel and ApplyParallel - Concurrent Variants
+
+`RenderParallel` and `ApplyParallel` are the concurrent counterparts of
+`Render` and `Apply`. They take the same `ParallelOptions` as
+`InParallelWith`:
+
+```go
+func RenderParallel[T, In, Out any](f Transform[T, In, Out], opts ParallelOptions) Transform[T, []In, []Out]
+func ApplyParallel[T, U any](f Consume[T, U], opts ParallelOptions) Consume[T, []U]
+```
+
+`RenderParallel` keeps its output in input order. Both wrap per-element
+errors in `IndexedError` and fail fast unless `JoinErrors` is set. Since the
+number of elements is known up front, a `Limit` of zero or less means no
+limit: every element runs at once.
+
+```go
+GetUserIDs.
+    Via(RenderParallel(LoadUser, flow.ParallelOptions{Limit: 10})).   // up to 10 lookups at once
+    To(ApplyParallel(SendNotification, flow.ParallelOptions{Limit: 5}))
+```
+
+Switching between the serial and parallel forms is a one-word change, so a
+pipeline can start serial and be parallelized later. The transform or
+consumer must be safe to run concurrently; see
+[Thread Safety](#thread-safety-in-parallel-execution).
 
 ### Parallel-Capable Collection Processing
 
@@ -625,30 +680,24 @@ Processing a collection?
 │           - At most one item or batch buffered at a time
 │           - Serial (Drain) or a worker pool (DrainParallel)
 │
-├─ Do you need parallel execution flexibility?
-│  ├─ Yes → Use ForEach + InSerial/InParallel
-│  │        - Define with ForEach
-│  │        - Choose serial/parallel at orchestration level
-│  │
-│  └─ No → Continue...
+├─ Does each item become its own step (e.g. deploy each service)?
+│  └─ Yes → Use ForEach + InSerial/InParallel
+│           - Define with ForEach
+│           - Choose serial/parallel at orchestration level
 │
-└─ Do you want functional composition?
-   ├─ Yes → Use Collect/Render/Apply
-   │        - Compose with From, Chain, Feed, Pipeline, With
-   │        - Serial execution only
-   │
-   └─ Either pattern works
-           - Collect/Render/Apply is simpler if you don't need parallel option
-           - ForEach if you might change your mind later
+└─ Passing values through transforms and a consumer?
+   └─ Yes → Use Collect/Render/Apply
+            - Compose with From, Chain, Feed, Pipeline, With
+            - Swap in RenderParallel/ApplyParallel for concurrency
 ```
 
 ### Comparison
 
 | Aspect | ForEach Pattern | Collect/Render/Apply | Streaming |
 |--------|----------------|----------------------|-----------|
-| **Execution** | Serial OR parallel | Serial only | Serial (`Drain`) or worker pool (`DrainParallel`) |
+| **Execution** | Serial OR parallel | Serial, or parallel with `RenderParallel`/`ApplyParallel` | Serial (`Drain`) or worker pool (`DrainParallel`) |
 | **Usage** | Requires orchestrator (`InSerial`/`InParallel`) | Direct composition in pipelines | Direct composition, ending in a `Step` |
-| **Flexibility** | Easy to switch between serial/parallel | Fixed serial execution | Switch `Drain` ↔ `DrainParallel` |
+| **Flexibility** | Easy to switch between serial/parallel | Swap `Render`/`Apply` for their parallel forms | Switch `Drain` ↔ `DrainParallel` |
 | **Composition** | Less composable (returns `StepsProvider`) | Highly composable (returns Extract/Transform/Consume) | Per-item transforms with `Source.Via` |
 | **Memory** | Whole list | Whole slice | One item or batch at a time |
 | **Best for** | Independent items, parallel potential | Ordered processing, functional pipelines | Large, unbounded, or paginated collections |
@@ -1484,8 +1533,9 @@ func QuickOperation() flow.Step[*State] {
 ### Thread Safety in Parallel Execution
 
 When using `InParallel`, be careful about concurrent access to shared state.
-The same goes for the consumer passed to `DrainParallel`, which runs on
-several workers at once (though the source it pulls from does not):
+The same goes for the functions passed to `RenderParallel`,
+`ApplyParallel`, and `DrainParallel`, which run on several goroutines at once
+(though the source `DrainParallel` pulls from does not):
 
 ```go
 // ❌ Dangerous: Multiple goroutines modifying state concurrently

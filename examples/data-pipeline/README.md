@@ -144,7 +144,7 @@ All three operators execute serially and fail fast:
 - Stop immediately on first error
 - Check for context cancellation between elements
 
-For parallel execution, use `Map` + `InParallel` instead (see [docs/patterns.md](../../docs/patterns.md#collection-processing-patterns)).
+For parallel execution, swap in `RenderParallel`/`ApplyParallel`, stream with `DrainParallel` (Example 1b), or use `ForEach` + `InParallel` (see [Collection Processing](../../docs/guide.md#collection-processing) in the guide).
 
 ### Functional Composition
 
@@ -185,14 +185,14 @@ func FetchNextPage(ctx context.Context, state *State) (Page, error) {
 
 This enables clean iterator patterns without special collection types or boolean flags.
 
-### When to Use Collection Operators vs. Map
+### When to Use Collection Operators vs. ForEach
 
 | Use Case | Pattern | Why |
 |----------|---------|-----|
-| Need parallel execution | `Map` + `InParallel` | Can run elements concurrently |
-| Serial-only processing | `Collect`/`Render`/`Apply` | Cleaner composition, no orchestrator needed |
-| Might parallelize later | `Map` + `InSerial` | Easy to switch to `InParallel` |
 | Functional pipeline | `Collect`/`Render`/`Apply` | Composes with `From`, `Chain`, `Feed`, `Pipeline` |
+| Parallel functional pipeline | `RenderParallel`/`ApplyParallel` | Drop-in concurrent versions of `Render`/`Apply` |
+| Large or paginated input | `Stream`/`Expand` + `Drain`/`DrainParallel` | One page in memory at a time |
+| Each item becomes a step | `ForEach` + `InSerial`/`InParallel` | Choose serial or parallel at the orchestration level |
 
 See the [Collection Processing](../../docs/guide.md#collection-processing) section of the guide for the complete decision guide.
 

@@ -34,6 +34,10 @@ During the **v0.x series**, breaking API changes may occur between minor version
     `Step.OnError`, `Step.Scoped`, `Step.WithCleanupTimeout`
   - Predicates: `Predicate.And`, `Predicate.Or`, `Predicate.Not`
   - Workflow-scoped values: `Key.Get`, `Key.Set`
+- Parallel collection operators and a global concurrency cap:
+  - `RenderParallel` transforms each element of a slice concurrently, preserving input order
+  - `ApplyParallel` consumes each element of a slice concurrently
+  - `WithMaxConcurrency` caps concurrency across every parallel combinator nested inside a step
 - Streaming combinators over the pull-based `Extract` + `ErrExhausted` protocol, processing items one at a time instead of materializing slices:
   - `Source[T, U]` type and `Stream` conversion, with fluent methods `Source.Via`, `Source.Drain`, `Source.DrainParallel`, and `Source.Collect`
   - `Expand` streams items out of a batch-producing source (streaming `Collect` + `Flatten`), buffering at most one batch
@@ -50,6 +54,7 @@ During the **v0.x series**, breaking API changes may occur between minor version
 - `WithValue[T, V]()` for setting workflow-scoped values that propagate across `Spawn` boundaries
 - `Lookup[V]()` for retrieving workflow-scoped values from the context
 - Tag-based selective execution example in `examples/tags/`
+- Infrastructure provisioning example in `examples/aws-provisioning/`, using the AWS SDK v2 against an in-process fake backend
 
 ### Fixed
 - `DoWith`, `InSerialWith`, and `InParallelWith` now check for context cancellation between steps, provider expansions, and goroutine scheduling. Previously, `JoinErrors` mode would continue executing all remaining work even after the parent context was cancelled.
