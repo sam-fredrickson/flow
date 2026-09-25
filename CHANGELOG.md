@@ -34,6 +34,12 @@ During the **v0.x series**, breaking API changes may occur between minor version
     `Step.OnError`, `Step.Scoped`, `Step.WithCleanupTimeout`
   - Predicates: `Predicate.And`, `Predicate.Or`, `Predicate.Not`
   - Workflow-scoped values: `Key.Get`, `Key.Set`
+- Streaming combinators over the pull-based `Extract` + `ErrExhausted` protocol, processing items one at a time instead of materializing slices:
+  - `Source[T, U]` type and `Stream` conversion, with fluent methods `Source.Via`, `Source.Drain`, `Source.DrainParallel`, and `Source.Collect`
+  - `Expand` streams items out of a batch-producing source (streaming `Collect` + `Flatten`), buffering at most one batch
+  - `Drain` and `DrainParallel` consume every item from a source (streaming `Collect` + `Apply`), serially or with a worker pool
+  - `ParallelOptions.Prefetch` lets `DrainParallel` pull items ahead of its workers, so a slow source makes progress while they are busy
+  - Streaming variant in `examples/data-pipeline/`, and `examples/drain-parallel/` showing how `Prefetch` keeps workers busy
 - Scope-based resource cleanup via `Scope`, `Manage`, and `WithCleanupTimeout`
   - `Scope` wraps a step and runs registered cleanups in LIFO order on exit, including after panics
   - `Manage` pairs an acquire step with a cleanup step, registering cleanup with the enclosing `Scope`
