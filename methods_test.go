@@ -178,10 +178,10 @@ func TestStepDecoratorMethods(t *testing.T) {
 		c := &CountingFlow{}
 		step := Step[*CountingFlow](func(_ context.Context, _ *CountingFlow) error {
 			return errors.New("primary failed")
-		}).OnError(FallbackTo(Step[*CountingFlow](func(_ context.Context, c *CountingFlow) error {
+		}).OnError(FallbackTo(func(_ context.Context, c *CountingFlow) error {
 			c.Counter = 99
 			return nil
-		})))
+		}))
 		if err := step(t.Context(), c); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -286,10 +286,10 @@ func TestKeyMethods(t *testing.T) {
 
 	var got string
 	var found bool
-	step := key.Set("fast", Step[*CountingFlow](func(ctx context.Context, _ *CountingFlow) error {
+	step := key.Set("fast", func(ctx context.Context, _ *CountingFlow) error {
 		got, found = key.Get(ctx)
 		return nil
-	}))
+	})
 
 	if err := step(t.Context(), &CountingFlow{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)

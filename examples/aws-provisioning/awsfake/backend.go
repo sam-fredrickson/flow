@@ -58,8 +58,8 @@ func New(region string) *Backend {
 // registers them by method name. Adding a new fake operation is just "add
 // the method" — no dispatch table to maintain.
 func buildHandlers(fakes ...any) map[string]handler {
-	ctxType := reflect.TypeOf((*context.Context)(nil)).Elem()
-	errType := reflect.TypeOf((*error)(nil)).Elem()
+	ctxType := reflect.TypeFor[context.Context]()
+	errType := reflect.TypeFor[error]()
 
 	handlers := make(map[string]handler)
 	for _, fake := range fakes {
