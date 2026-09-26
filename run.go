@@ -147,8 +147,8 @@ type ParallelOptions struct {
 	// The interpretation of values less than or equal to zero varies by
 	// function. Where the amount of work is known up front ([InParallelWith],
 	// [RenderParallel], [ApplyParallel]), they mean no limit: everything may
-	// run at once. Where work is pulled on demand ([DrainParallel]), "no
-	// limit" is not meaningful — the limit is what bounds both concurrency
+	// run at once. Where work is pulled on demand ([Pool], [DrainParallel]),
+	// "no limit" is not meaningful — the limit is what bounds both concurrency
 	// and in-flight items — so they mean a default of [runtime.GOMAXPROCS]
 	// workers. See each function's documentation.
 	Limit int
@@ -166,8 +166,8 @@ type ParallelOptions struct {
 	// joined result.
 	JoinErrors bool
 
-	// Prefetch lets [DrainParallel] pull items from its source ahead of
-	// demand, so that a slow source (such as one fetching pages) makes
+	// Prefetch lets [Pool] and [DrainParallel] pull items from their source
+	// ahead of demand, so that a slow source (such as one fetching pages) makes
 	// progress while workers are busy consuming earlier items. It bounds
 	// how many items may have been pulled but not yet taken by a worker.
 	// Values less than or equal to zero disable prefetching: an item is

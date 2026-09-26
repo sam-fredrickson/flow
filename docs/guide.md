@@ -17,6 +17,7 @@ A comprehensive guide to building type-safe workflows with `flow`.
    - [Resource Cleanup](#resource-cleanup)
    - [Debugging](#debugging)
    - [Mega-Wrappers: Factoring Out Common Patterns](#mega-wrappers-factoring-out-common-patterns)
+   - [Custom Parallel Combinators with Pool](#custom-parallel-combinators-with-pool)
    - [Thread Safety in Parallel Execution](#thread-safety-in-parallel-execution)
    - [Common Pitfalls](#common-pitfalls)
 
@@ -164,7 +165,8 @@ flow.InParallelWith(
 `Limit` caps the goroutines of one combinator. To cap concurrency across a
 whole workflow, wrap it in `WithMaxConcurrency`. Every parallel combinator
 nested inside (`InParallelWith`, `RenderParallel`, `ApplyParallel`,
-`DrainParallel`) then draws from one shared pool of slots:
+`DrainParallel`, and custom ones built on [`Pool`](#custom-parallel-combinators-with-pool))
+then draws from one shared pool of slots:
 
 ```go
 // At most 10 things running at once, across both batches
@@ -1529,12 +1531,54 @@ func QuickOperation() flow.Step[*State] {
 - The wrapper adds more complexity than it saves
 - You only have a few steps
 
+### Custom Parallel Combinators with Pool
+
+When none of the built-in parallel combinators fits, `Pool` is the worker
+pool they are all built on. It pulls tasks on demand from a `next` function
+and runs each one on a pool of `opts.Limit` workers (`GOMAXPROCS` by
+default). Calls to `next` are serialized, so it needs no locking of its own,
+and it returns `ErrExhausted` when there are no more tasks. Both functions
+receive the pull index, which is handy for attributing errors, since `Pool`
+doesn't wrap them itself:
+
+```go
+// ApplyBatches consumes a slice in batches of size n, running batches
+// concurrently.
+func ApplyBatches[T, U any](n int, consume flow.Consume[T, []U], opts flow.ParallelOptions) flow.Consume[T, []U] {
+    return func(ctx context.Context, t T, items []U) error {
+        return flow.Pool(ctx,
+            func(_ context.Context, i int) ([]U, error) {
+                start := i * n
+                if start >= len(items) {
+                    return nil, flow.ErrExhausted
+                }
+                return items[start:min(start+n, len(items))], nil
+            },
+            func(ctx context.Context, i int, batch []U) error {
+                if err := consume(ctx, t, batch); err != nil {
+                    return &flow.IndexedError{Index: i, Err: err}
+                }
+                return nil
+            },
+            opts,
+        )
+    }
+}
+```
+
+A combinator built on `Pool` behaves like the built-in ones: it fails fast or
+joins errors per `JoinErrors`, honors `Prefetch`, and takes part in
+`WithMaxConcurrency`, including giving its caller's slot back while it runs,
+so it can be nested under a global cap without deadlocking. Hand-rolled
+goroutines (with `errgroup`, say) get none of that.
+
 ### Thread Safety in Parallel Execution
 
 When using `InParallel`, be careful about concurrent access to shared state.
 The same goes for the functions passed to `RenderParallel`,
-`ApplyParallel`, and `DrainParallel`, which run on several goroutines at once
-(though the source `DrainParallel` pulls from does not):
+`ApplyParallel`, `DrainParallel`, and `Pool`, which run on several goroutines
+at once (though the source `DrainParallel` pulls from, and `Pool`'s `next`,
+do not):
 
 ```go
 // ❌ Dangerous: Multiple goroutines modifying state concurrently
