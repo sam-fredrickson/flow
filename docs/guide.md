@@ -361,14 +361,14 @@ Each composition pattern above has a method form, and this is where the
 fluent style pays off most: pipelines read left-to-right in data-flow order
 instead of inside-out.
 
-| Function form | Method form |
-|---------------|-------------|
-| `From(e, t)` | `e.Via(t)` |
-| `Chain(t1, t2)` | `t1.Then(t2)` |
-| `Feed(t, c)` | `t.To(c)` |
-| `With(e, c)` | `e.To(c)` |
+| Function form       | Method form      |
+|---------------------|------------------|
+| `From(e, t)`        | `e.Via(t)`       |
+| `Chain(t1, t2)`     | `t1.Then(t2)`    |
+| `Feed(t, c)`        | `t.To(c)`        |
+| `With(e, c)`        | `e.To(c)`        |
 | `Pipeline(e, t, c)` | `e.Via(t).To(c)` |
-| `Spawn(e, s)` | `e.Spawn(s)` |
+| `Spawn(e, s)`       | `e.Spawn(s)`     |
 
 The methods that change the value type (`Via`, `Then`) are generic methods,
 so multi-stage pipelines stay fully type-inferred:
@@ -692,14 +692,14 @@ Processing a collection?
 
 ### Comparison
 
-| Aspect | ForEach Pattern | Collect/Render/Apply | Streaming |
-|--------|----------------|----------------------|-----------|
-| **Execution** | Serial OR parallel | Serial, or parallel with `RenderParallel`/`ApplyParallel` | Serial (`Drain`) or worker pool (`DrainParallel`) |
-| **Usage** | Requires orchestrator (`InSerial`/`InParallel`) | Direct composition in pipelines | Direct composition, ending in a `Step` |
-| **Flexibility** | Easy to switch between serial/parallel | Swap `Render`/`Apply` for their parallel forms | Switch `Drain` ↔ `DrainParallel` |
-| **Composition** | Less composable (returns `StepsProvider`) | Highly composable (returns Extract/Transform/Consume) | Per-item transforms with `Source.Via` |
-| **Memory** | Whole list | Whole slice | One item or batch at a time |
-| **Best for** | Independent items, parallel potential | Ordered processing, functional pipelines | Large, unbounded, or paginated collections |
+| Aspect          | ForEach Pattern                                 | Collect/Render/Apply                                      | Streaming                                         |
+|-----------------|-------------------------------------------------|-----------------------------------------------------------|---------------------------------------------------|
+| **Execution**   | Serial OR parallel                              | Serial, or parallel with `RenderParallel`/`ApplyParallel` | Serial (`Drain`) or worker pool (`DrainParallel`) |
+| **Usage**       | Requires orchestrator (`InSerial`/`InParallel`) | Direct composition in pipelines                           | Direct composition, ending in a `Step`            |
+| **Flexibility** | Easy to switch between serial/parallel          | Swap `Render`/`Apply` for their parallel forms            | Switch `Drain` ↔ `DrainParallel`                  |
+| **Composition** | Less composable (returns `StepsProvider`)       | Highly composable (returns Extract/Transform/Consume)     | Per-item transforms with `Source.Via`             |
+| **Memory**      | Whole list                                      | Whole slice                                               | One item or batch at a time                       |
+| **Best for**    | Independent items, parallel potential           | Ordered processing, functional pipelines                  | Large, unbounded, or paginated collections        |
 
 ---
 
@@ -709,11 +709,11 @@ The library supports three main workflow patterns. Choose based on when you know
 
 ### Pattern Overview
 
-| Pattern | Steps Known At | Configuration Source | Best For |
-|---------|---------------|---------------------|----------|
-| **Static Workflows** | Compile time | Hardcoded in workflow definition | Fixed processes with known steps |
+| Pattern                  | Steps Known At           | Configuration Source                | Best For                                               |
+|--------------------------|--------------------------|-------------------------------------|--------------------------------------------------------|
+| **Static Workflows**     | Compile time             | Hardcoded in workflow definition    | Fixed processes with known steps                       |
 | **Configuration-Driven** | Compile time (templates) | Code-based configuration structures | Multi-component systems where components declare needs |
-| **Dynamic Workflows** | Runtime | Computed from runtime data | Processes where steps depend on external data |
+| **Dynamic Workflows**    | Runtime                  | Computed from runtime data          | Processes where steps depend on external data          |
 
 ### Pattern 1: Static Workflows
 
