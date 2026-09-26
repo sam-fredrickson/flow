@@ -16,6 +16,10 @@ During the **v0.x series**, breaking API changes may occur between minor version
 
 ## [Unreleased]
 
+---
+
+## [0.3.0] - 2026-09-25
+
 ### Changed
 - **Breaking**: `Step`, `Extract`, `Transform`, `Consume`, and `Predicate` are
   now defined function types instead of type aliases. Function literals and
@@ -24,6 +28,7 @@ During the **v0.x series**, breaking API changes may occur between minor version
 - **Breaking**: Removed `Chain3` and `Chain4`; use the `Transform.Then` method,
   which chains transforms to any length.
 - **Breaking**: Requires Go 1.27+ (generic methods).
+- Bump `golang.org/x/sync` from 0.19.0 to 0.20.0
 
 ### Added
 - Fluent method API on the core types, mirroring the package-level combinators:
@@ -37,8 +42,8 @@ During the **v0.x series**, breaking API changes may occur between minor version
 - Parallel collection operators and a global concurrency cap:
   - `RenderParallel` transforms each element of a slice concurrently, preserving input order
   - `ApplyParallel` consumes each element of a slice concurrently
-  - `WithMaxConcurrency` caps concurrency across every parallel combinator nested inside a step
-- Streaming combinators over the pull-based `Extract` + `ErrExhausted` protocol, processing items one at a time instead of materializing slices:
+  - `WithMaxConcurrency` caps concurrency across every parallel combinator nested inside a step; a task waiting on nested parallel work gives its slot back, so the cap counts only running tasks and nesting cannot deadlock
+- Streaming combinators over the pull-based `Extract` + `ErrExhausted` protocol, processing items one at a time instead of materializing slices (new in this release; the API may still change):
   - `Source[T, U]` type and `Stream` conversion, with fluent methods `Source.Via`, `Source.Drain`, `Source.DrainParallel`, and `Source.Collect`
   - `Expand` streams items out of a batch-producing source (streaming `Collect` + `Flatten`), buffering at most one batch
   - `Drain` and `DrainParallel` consume every item from a source (streaming `Collect` + `Apply`), serially or with a worker pool
@@ -57,7 +62,6 @@ During the **v0.x series**, breaking API changes may occur between minor version
 - Infrastructure provisioning example in `examples/aws-provisioning/`, using the AWS SDK v2 against an in-process fake backend
 
 ### Fixed
-- `WithMaxConcurrency` no longer deadlocks when parallel combinators are nested under a cap no larger than the number of outer tasks running at once. A task waiting on nested parallel work now gives its slot back until that work finishes, so the cap counts only running tasks, and nested work can use the whole cap.
 - `DoWith`, `InSerialWith`, and `InParallelWith` now check for context cancellation between steps, provider expansions, and goroutine scheduling. Previously, `JoinErrors` mode would continue executing all remaining work even after the parent context was cancelled.
 - Likewise, `While` and `Retry` now check for context cancellation between iterations. Previously, a cancelled context would only be detected if the predicate or step happened to check it.
 
@@ -222,7 +226,8 @@ For security vulnerabilities, please contact samfredrickson@gmail.com privately 
 
 ---
 
-[Unreleased]: https://github.com/sam-fredrickson/flow/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/sam-fredrickson/flow/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/sam-fredrickson/flow/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/sam-fredrickson/flow/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/sam-fredrickson/flow/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/sam-fredrickson/flow/releases/tag/v0.1.0

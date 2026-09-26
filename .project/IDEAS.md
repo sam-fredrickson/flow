@@ -84,7 +84,7 @@ flow.With(GetRecords, flow.Apply(ValidateRecord))
 flow.With(GetRecords, flow.ApplyAll(ValidateRecord))
 ```
 
-**Status:** Wait for user demand. Current fail-fast behavior is usually preferred.
+**Status:** Partially addressed. `RenderParallel` and `ApplyParallel` collect and join errors with `ParallelOptions{JoinErrors: true}`; the serial `Render` and `Apply` are still fail-fast only.
 
 #### 2. Skip Sentinel Error
 
@@ -125,7 +125,7 @@ func NextEvenNumber(ctx context.Context, state *State) (int, error) {
 flow.With(flow.Collect(NextEvenNumber), flow.Apply(Process))
 ```
 
-**Status:** Speculative. Can be worked around with `Render` + filtering logic, or by having the Extract function maintain skip logic internally.
+**Status:** Speculative. Can be worked around with `Render` + filtering logic, or by having the Extract function maintain skip logic internally. With streaming sources (`Source`), this is more naturally a filtering combinator on the source than a sentinel understood by `Collect`.
 
 #### 3. Parallel Collection Variants
 
@@ -138,4 +138,4 @@ func ApplyInParallel[T, U any](f Consume[T, U]) Consume[T, []U]
 
 **Use case:** When you want parallel execution but still need the result as `Transform` or `Consume` (not `StepsProvider`).
 
-**Status:** Wait for user demand. Current approach is to use `Map` + `InParallel`, which is explicit about parallel execution intent. Parallel variants of `Render`/`Apply` might hide parallelism too much.
+**Status:** Implemented in v0.3.0 as `RenderParallel` and `ApplyParallel`, taking `ParallelOptions`, which keeps the parallelism explicit at the call site. The streaming counterpart of `ApplyParallel` is `DrainParallel`; streams have no order-preserving parallel `Render` yet.
