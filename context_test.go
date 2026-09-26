@@ -404,7 +404,8 @@ func TestWithMaxConcurrency(t *testing.T) {
 		}
 
 		// Two parallel applies running concurrently via InParallelWith,
-		// both sharing the same global cap of 4.
+		// both sharing the same global cap of 4. The outer steps give their
+		// slots back while waiting, so the leaves can use all 4.
 		step := WithMaxConcurrency(4, InParallel(
 			Steps(
 				With(
@@ -430,7 +431,135 @@ func TestWithMaxConcurrency(t *testing.T) {
 		if maxConcurrent.Load() > 4 {
 			t.Errorf("max concurrency %d exceeded global cap 4", maxConcurrent.Load())
 		}
+		if maxConcurrent.Load() < 4 {
+			t.Errorf("max concurrency %d never reached global cap 4", maxConcurrent.Load())
+		}
 	})
+
+	t.Run("NestedAtCapDoesNotDeadlock", func(t *testing.T) {
+		t.Parallel()
+		// As many outer steps as the cap, each with nested parallel work.
+		var g concurrencyGauge
+		inner := With(sliceOf(6), ApplyParallel(g.consume(5*time.Millisecond), ParallelOptions{}))
+		step := WithMaxConcurrency(2, InParallel(Steps(inner, inner)))
+
+		runBefore(t, 5*time.Second, step)
+		if g.Max() > 2 {
+			t.Errorf("max concurrency %d exceeded global cap 2", g.Max())
+		}
+	})
+
+	t.Run("DeeplyNestedWithCapOfOne", func(t *testing.T) {
+		t.Parallel()
+		var g concurrencyGauge
+		leaves := With(sliceOf(3), ApplyParallel(g.consume(time.Millisecond), ParallelOptions{}))
+		mid := InParallel(Steps(leaves, leaves, leaves))
+		step := WithMaxConcurrency(1, InParallel(Steps(mid, mid, mid)))
+
+		runBefore(t, 5*time.Second, step)
+		if g.Max() != 1 {
+			t.Errorf("got max concurrency %d, want 1", g.Max())
+		}
+	})
+
+	t.Run("WorkAfterNestedCombinatorIsCapped", func(t *testing.T) {
+		t.Parallel()
+		// A step reacquires its slot before continuing past nested work.
+		var g concurrencyGauge
+		after := g.consume(5 * time.Millisecond)
+		inner := Do(
+			With(sliceOf(4), ApplyParallel(g.consume(5*time.Millisecond), ParallelOptions{})),
+			func(ctx context.Context, c *CountingFlow) error { return after(ctx, c, 0) },
+		)
+		step := WithMaxConcurrency(2, InParallel(Steps(inner, inner, inner, inner)))
+
+		runBefore(t, 5*time.Second, step)
+		if g.Max() > 2 {
+			t.Errorf("max concurrency %d exceeded global cap 2", g.Max())
+		}
+	})
+
+	t.Run("NestedCapIsIndependent", func(t *testing.T) {
+		t.Parallel()
+		// A slot from the outer cap is never spent against the inner one.
+		var g concurrencyGauge
+		inner := WithMaxConcurrency(1, With(
+			sliceOf(6),
+			ApplyParallel(g.consume(5*time.Millisecond), ParallelOptions{}),
+		))
+		step := WithMaxConcurrency(4, InParallel(Steps(inner)))
+
+		runBefore(t, 5*time.Second, step)
+		if g.Max() != 1 {
+			t.Errorf("got max concurrency %d, want inner cap 1", g.Max())
+		}
+	})
+
+	t.Run("CancelledWhileNested", func(t *testing.T) {
+		t.Parallel()
+		// Cancelling while steps wait to reacquire their slots must neither
+		// hang nor release a slot twice (which would panic).
+		for range 20 {
+			var g concurrencyGauge
+			inner := Do(
+				With(sliceOf(8), ApplyParallel(g.consume(2*time.Millisecond), ParallelOptions{})),
+				Increment(1),
+			)
+			step := WithMaxConcurrency(2, InParallel(Steps(inner, inner, inner)))
+
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Millisecond)
+			done := make(chan error, 1)
+			go func() { done <- step(ctx, &CountingFlow{}) }()
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("step hung after cancellation")
+			}
+			cancel()
+		}
+	})
+}
+
+// concurrencyGauge tracks the high-water mark of concurrently running
+// consumers.
+type concurrencyGauge struct {
+	cur, max atomic.Int64
+}
+
+// consume returns a consumer that counts itself as running for d.
+func (g *concurrencyGauge) consume(d time.Duration) Consume[*CountingFlow, int64] {
+	return func(context.Context, *CountingFlow, int64) error {
+		cur := g.cur.Add(1)
+		for {
+			old := g.max.Load()
+			if cur <= old || g.max.CompareAndSwap(old, cur) {
+				break
+			}
+		}
+		time.Sleep(d)
+		g.cur.Add(-1)
+		return nil
+	}
+}
+
+func (g *concurrencyGauge) Max() int64 { return g.max.Load() }
+
+// sliceOf returns an extract producing n zeros.
+func sliceOf(n int) Extract[*CountingFlow, []int64] {
+	return func(context.Context, *CountingFlow) ([]int64, error) {
+		return make([]int64, n), nil
+	}
+}
+
+// runBefore runs step, failing the test if it errors or takes longer than
+// timeout (which, for these tests, means it deadlocked).
+func runBefore(t *testing.T, timeout time.Duration, step Step[*CountingFlow]) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), timeout)
+	defer cancel()
+	if err := step(ctx, &CountingFlow{}); err != nil {
+		t.Fatalf("unexpected error (deadlock?): %v", err)
+	}
 }
 
 // ==== Test Fixtures ====

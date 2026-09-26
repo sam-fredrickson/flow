@@ -416,6 +416,31 @@ func TestDrainParallelRespectsGlobalSemaphore(t *testing.T) {
 	}
 }
 
+func TestDrainParallelNestedUnderGlobalSemaphore(t *testing.T) {
+	t.Parallel()
+
+	// A prefetching drain inside a parallel step, whose source itself fans
+	// out, must not deadlock under a cap of 1.
+	var g concurrencyGauge
+	pages := 0
+	source := Source[*CountingFlow, []int64](func(ctx context.Context, c *CountingFlow) ([]int64, error) {
+		if pages >= 3 {
+			return nil, ErrExhausted
+		}
+		pages++
+		if err := With(sliceOf(3), ApplyParallel(g.consume(time.Millisecond), ParallelOptions{}))(ctx, c); err != nil {
+			return nil, err
+		}
+		return make([]int64, 4), nil
+	})
+	drain := Expand(source).DrainParallel(g.consume(time.Millisecond), ParallelOptions{Limit: 3, Prefetch: 4})
+
+	runBefore(t, 5*time.Second, WithMaxConcurrency(1, InParallel(Steps(drain))))
+	if g.Max() != 1 {
+		t.Errorf("got max concurrency %d, want 1", g.Max())
+	}
+}
+
 func TestDrainParallelCancellation(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(t.Context())

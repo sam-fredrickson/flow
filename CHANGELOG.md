@@ -57,6 +57,7 @@ During the **v0.x series**, breaking API changes may occur between minor version
 - Infrastructure provisioning example in `examples/aws-provisioning/`, using the AWS SDK v2 against an in-process fake backend
 
 ### Fixed
+- `WithMaxConcurrency` no longer deadlocks when parallel combinators are nested under a cap no larger than the number of outer tasks running at once. A task waiting on nested parallel work now gives its slot back until that work finishes, so the cap counts only running tasks, and nested work can use the whole cap.
 - `DoWith`, `InSerialWith`, and `InParallelWith` now check for context cancellation between steps, provider expansions, and goroutine scheduling. Previously, `JoinErrors` mode would continue executing all remaining work even after the parent context was cancelled.
 - Likewise, `While` and `Retry` now check for context cancellation between iterations. Previously, a cancelled context would only be detected if the predicate or step happened to check it.
 

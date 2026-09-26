@@ -6,6 +6,7 @@ import (
 	"context"
 	"log"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/semaphore"
@@ -59,6 +60,10 @@ type flowCtx struct {
 	// sem is the global concurrency semaphore installed by WithMaxConcurrency.
 	// nil means no global concurrency cap is active.
 	sem *semaphore.Weighted
+
+	// permit is the semaphore permit held by the parallel task running with
+	// this context. nil outside tasks run under a global cap.
+	permit *permit
 }
 
 // Value implements context.Context.Value by intercepting flowCtxKey lookups
@@ -113,6 +118,7 @@ func newFlowCtx(parent context.Context, origin *flowCtx) *flowCtx {
 		scope:          origin.scope,
 		cleanupTimeout: origin.cleanupTimeout,
 		sem:            origin.sem,
+		permit:         origin.permit,
 	}
 	return f
 }
@@ -192,6 +198,45 @@ func getSemaphore(ctx context.Context) *semaphore.Weighted {
 	return fc.sem
 }
 
+// permit tracks a global-semaphore permit held by a parallel task.
+//
+// While the task waits on a nested parallel combinator using the same
+// semaphore, it gives the permit back to the pool (see [yieldPermit]), so a
+// task blocked on nested work never holds a permit that work needs.
+type permit struct {
+	sem  *semaphore.Weighted
+	held atomic.Bool
+}
+
+// withPermit returns a context for a task that holds a permit from sem.
+func withPermit(ctx context.Context, sem *semaphore.Weighted) (context.Context, *permit) {
+	fc := getOrCreateFlowCtx(ctx)
+	fc.permit = &permit{sem: sem}
+	fc.permit.held.Store(true)
+	return fc, fc.permit
+}
+
+// yieldPermit releases the permit held by the task running with ctx, if it
+// holds one from sem, and returns a func that reacquires it. If ctx is
+// cancelled before the permit is reacquired, the reacquire gives up and the
+// permit is left not held, so the task's worker does not release it.
+func yieldPermit(ctx context.Context, sem *semaphore.Weighted) (reacquire func()) {
+	fc, _ := ctx.Value(flowCtxKey{}).(*flowCtx)
+	if fc == nil || fc.permit == nil || fc.permit.sem != sem {
+		return func() {}
+	}
+	p := fc.permit
+	if !p.held.CompareAndSwap(true, false) {
+		return func() {}
+	}
+	sem.Release(1)
+	return func() {
+		if sem.Acquire(ctx, 1) == nil {
+			p.held.Store(true)
+		}
+	}
+}
+
 // WithMaxConcurrency wraps a step with a global concurrency cap.
 //
 // The limit controls the maximum number of goroutines that may execute
@@ -204,13 +249,18 @@ func getSemaphore(ctx context.Context) *semaphore.Weighted {
 // limit controls goroutine count while the global cap controls actual
 // execution concurrency.
 //
+// The cap counts tasks that are running, not tasks that are waiting. A task
+// that starts a nested parallel combinator gives its slot back while it
+// waits for the nested work, and takes a slot again before continuing, so
+// nesting parallel combinators under a small cap cannot deadlock.
+//
 // Example:
 //
-//	// At most 10 goroutines actively running across all parallel work
-//	flow.WithMaxConcurrency(10, flow.Do(
+//	// At most 10 tasks running at once, across both batches
+//	flow.WithMaxConcurrency(10, flow.InParallel(flow.Steps(
 //	    flow.With(GetBatch1, ApplyParallel(Process, ParallelOptions{Limit: 20})),
 //	    flow.With(GetBatch2, ApplyParallel(Process, ParallelOptions{Limit: 20})),
-//	))
+//	)))
 func WithMaxConcurrency[T any](limit int, step Step[T]) Step[T] {
 	return func(ctx context.Context, t T) error {
 		fc := getOrCreateFlowCtx(ctx)

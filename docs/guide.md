@@ -174,11 +174,10 @@ flow.WithMaxConcurrency(10, flow.InParallel(flow.Steps(
 )))
 ```
 
-Each running task holds a slot, including outer steps whose own work is
-parallel: above, the two outer steps hold 2 of the 10 slots, leaving 8 for
-orders and refunds. Keep the cap above the number of outer steps that run at
-once. If they hold every slot, their inner work can never start and the
-workflow deadlocks.
+The cap counts tasks that are running, not tasks that are waiting. Above,
+each outer step gives its slot back while its `ApplyParallel` runs, so all
+10 slots go to processing orders and refunds, and nesting parallel
+combinators under a small cap cannot deadlock.
 
 **Thread Safety:** When using parallel execution, ensure your state type `T` is thread-safe. See [Thread Safety](#thread-safety-in-parallel-execution) for details.
 

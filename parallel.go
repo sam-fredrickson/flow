@@ -18,7 +18,9 @@ import (
 // are available. Any other error from next stops further pulling.
 //
 // If a global semaphore is present in ctx (via [WithMaxConcurrency]), each
-// worker acquires it around run.
+// worker acquires it around run. If the caller is itself a task holding a
+// permit from that semaphore, it gives the permit back while the pool runs
+// and reacquires it before returning.
 //
 // If opts.JoinErrors is true, errors from next and run are collected while
 // the pool keeps going (though an error from next still stops pulling, since
@@ -35,6 +37,9 @@ func parallelPull[U any](
 	run func(ctx context.Context, i int, u U) error,
 ) error {
 	sem := getSemaphore(ctx)
+	if sem != nil {
+		defer yieldPermit(ctx, sem)()
+	}
 	group, subCtx := errgroup.WithContext(ctx)
 
 	var (
@@ -94,13 +99,16 @@ func parallelPull[U any](
 					return nil
 				}
 
+				taskCtx := context.Context(subCtx)
+				var p *permit
 				if sem != nil {
 					if err := sem.Acquire(subCtx, 1); err != nil {
 						return record(err)
 					}
+					taskCtx, p = withPermit(subCtx, sem)
 				}
-				err = run(subCtx, i, u)
-				if sem != nil {
+				err = run(taskCtx, i, u)
+				if p != nil && p.held.Load() {
 					sem.Release(1)
 				}
 				if err != nil {
