@@ -187,12 +187,12 @@ This enables clean iterator patterns without special collection types or boolean
 
 ### When to Use Collection Operators vs. ForEach
 
-| Use Case | Pattern | Why |
-|----------|---------|-----|
-| Functional pipeline | `Collect`/`Render`/`Apply` | Composes with `From`, `Chain`, `Feed`, `Pipeline` |
-| Parallel functional pipeline | `RenderParallel`/`ApplyParallel` | Drop-in concurrent versions of `Render`/`Apply` |
-| Large or paginated input | `Stream`/`Expand` + `Drain`/`DrainParallel` | One page in memory at a time |
-| Each item becomes a step | `ForEach` + `InSerial`/`InParallel` | Choose serial or parallel at the orchestration level |
+| Use Case                     | Pattern                                     | Why                                                  |
+|------------------------------|---------------------------------------------|------------------------------------------------------|
+| Functional pipeline          | `Collect`/`Render`/`Apply`                  | Composes with `From`, `Chain`, `Feed`, `Pipeline`    |
+| Parallel functional pipeline | `RenderParallel`/`ApplyParallel`            | Drop-in concurrent versions of `Render`/`Apply`      |
+| Large or paginated input     | `Stream`/`Expand` + `Drain`/`DrainParallel` | One page in memory at a time                         |
+| Each item becomes a step     | `ForEach` + `InSerial`/`InParallel`         | Choose serial or parallel at the orchestration level |
 
 See the [Collection Processing](../../docs/guide.md#collection-processing) section of the guide for the complete decision guide.
 

@@ -5,7 +5,6 @@ package flow
 import (
 	"context"
 	"errors"
-	"runtime"
 )
 
 // Source is an [Extract] that follows the pull-based iterator protocol:
@@ -116,7 +115,7 @@ func Drain[T, U any](next Source[T, U], consume Consume[T, U]) Step[T] {
 }
 
 // DrainParallel pulls items from a [Source] until [ErrExhausted], consuming
-// them concurrently with a pool of workers.
+// them concurrently with a pool of workers. It is [Pool] over a source.
 //
 // Pulls from the source are serialized, so the source needs no internal
 // synchronization; consumption runs on up to opts.Limit goroutines (or
@@ -150,21 +149,9 @@ func DrainParallel[T, U any](
 	opts ParallelOptions,
 ) Step[T] {
 	return func(ctx context.Context, t T) error {
-		workers := opts.Limit
-		if workers <= 0 {
-			workers = runtime.GOMAXPROCS(0)
-		}
-
-		pull := func(ctx context.Context) (U, error) { return next(ctx, t) }
-		if opts.Prefetch > 0 {
-			var stop func()
-			pull, stop = prefetch(ctx, t, next, opts.Prefetch)
-			defer stop()
-		}
-
-		return parallelPull(ctx, workers, opts,
+		return Pool(ctx,
 			func(ctx context.Context, i int) (U, error) {
-				u, err := pull(ctx)
+				u, err := next(ctx, t)
 				if err != nil && !errors.Is(err, ErrExhausted) {
 					return u, &IndexedError{Index: i, Err: err}
 				}
@@ -176,61 +163,7 @@ func DrainParallel[T, U any](
 				}
 				return nil
 			},
+			opts,
 		)
 	}
-}
-
-// prefetch starts a goroutine that pulls from next ahead of demand, keeping
-// at most n pulled items that pull has not yet returned.
-//
-// pull returns the results in order, or ctx's error if ctx is done first.
-// The goroutine stops after the first error, including [ErrExhausted], and
-// delivers it as the final result, so pull must not be called again after
-// returning one. stop cancels the goroutine, aborting any pull in progress,
-// and waits for it to exit, so next is never called after stop returns.
-func prefetch[T, U any](
-	ctx context.Context,
-	t T,
-	next Source[T, U],
-	n int,
-) (pull func(context.Context) (U, error), stop func()) {
-	type result struct {
-		u   U
-		err error
-	}
-	// The goroutine holds one pulled item while blocked sending, so the
-	// buffer holds the other n-1.
-	results := make(chan result, n-1)
-	ctx, cancel := context.WithCancel(ctx)
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-		for ctx.Err() == nil {
-			u, err := next(ctx, t)
-			select {
-			case results <- result{u: u, err: err}:
-			case <-ctx.Done():
-				return
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
-
-	pull = func(ctx context.Context) (U, error) {
-		select {
-		case r := <-results:
-			return r.u, r.err
-		case <-ctx.Done():
-			var zero U
-			return zero, ctx.Err()
-		}
-	}
-	stop = func() {
-		cancel()
-		<-done
-	}
-	return pull, stop
 }

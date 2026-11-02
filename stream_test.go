@@ -577,6 +577,9 @@ func TestDrainParallelPrefetchCancelsInFlightPull(t *testing.T) {
 			close(pulling)
 			select {
 			case <-ctx.Done():
+				// Like a network call, take a moment to notice; the drain
+				// must still wait for the pull to finish.
+				time.Sleep(10 * time.Millisecond)
 				return 0, ctx.Err()
 			case <-time.After(5 * time.Second):
 				return 0, errors.New("pull was not cancelled")

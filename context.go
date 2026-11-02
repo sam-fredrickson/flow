@@ -241,9 +241,9 @@ func yieldPermit(ctx context.Context, sem *semaphore.Weighted) (reacquire func()
 //
 // The limit controls the maximum number of goroutines that may execute
 // concurrently within any parallel combinator ([RenderParallel],
-// [ApplyParallel], [InParallelWith], [DrainParallel]) nested inside the
-// step. Each WithMaxConcurrency installs an independent semaphore; nested
-// calls do not inherit or share the parent's cap.
+// [ApplyParallel], [InParallelWith], [DrainParallel]) or [Pool] nested
+// inside the step. Each WithMaxConcurrency installs an independent
+// semaphore; nested calls do not inherit or share the parent's cap.
 //
 // This composes with per-combinator [ParallelOptions.Limit]: the combinator
 // limit controls goroutine count while the global cap controls actual

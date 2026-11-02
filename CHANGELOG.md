@@ -16,6 +16,9 @@ During the **v0.x series**, breaking API changes may occur between minor version
 
 ## [Unreleased]
 
+### Added
+- `Pool`, the worker pool under the parallel combinators, for building custom ones that honor `ParallelOptions` (including `Prefetch`) and take part in `WithMaxConcurrency` like the built-ins
+
 ---
 
 ## [0.3.0] - 2026-09-25

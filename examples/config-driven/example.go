@@ -113,7 +113,7 @@ func GatherDbSetup(ctx context.Context, setup *EnvironmentSetup) ([]DbInstanceSe
 				continue // skip services with no setup
 			}
 			// Wrap with service name for error attribution
-			wrappedStep := flow.Named(string(serviceName), db.Setup)
+			wrappedStep := flow.Named(serviceName, db.Setup)
 			stepsByInstance[db.Instance] = append(stepsByInstance[db.Instance], wrappedStep)
 		}
 	}
