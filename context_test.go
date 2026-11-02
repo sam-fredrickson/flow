@@ -511,6 +511,7 @@ func TestWithMaxConcurrency(t *testing.T) {
 			done := make(chan error, 1)
 			go func() { done <- step(ctx, &CountingFlow{}) }()
 			select {
+			//nolint:errcheck
 			case <-done:
 			case <-time.After(5 * time.Second):
 				t.Fatal("step hung after cancellation")
